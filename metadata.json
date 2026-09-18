@@ -1,0 +1,6 @@
+{
+  "name": "PDFGo",
+  "description": "Focused PDF reader for one active document at a time with seamless viewing, search, and download.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

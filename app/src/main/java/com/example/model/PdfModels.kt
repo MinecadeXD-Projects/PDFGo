@@ -1,0 +1,58 @@
+package com.example.model
+
+import com.example.ui.theme.AppThemeSetting
+
+enum class Screen {
+  HOME,
+  LOADING,
+  READER,
+  SETTINGS
+}
+
+enum class FitMode(val label: String) {
+  FIT_WIDTH("Fit to Width"),
+  FIT_PAGE("Fit to Page")
+}
+
+enum class PageSpacing(val label: String, val dpValue: Int) {
+  NORMAL("Normal (16dp)", 16),
+  COMPACT("Compact (8dp)", 8),
+  NONE("None (Continuous)", 0)
+}
+
+data class PdfDocument(
+  val url: String,
+  val title: String,
+  val totalPages: Int = 84,
+  val currentPage: Int = 12,
+  val zoomPercent: Int = 100
+)
+
+data class SearchState(
+  val isOpen: Boolean = false,
+  val query: String = "",
+  val currentMatchIndex: Int = 0,
+  val totalMatches: Int = 0,
+  val specialNotice: String? = null
+)
+
+data class DownloadModalState(
+  val isOpen: Boolean = false,
+  val filename: String = "",
+  val isDownloading: Boolean = false,
+  val progressPercent: Int = 0,
+  val progressBytes: String = "",
+  val isCompleted: Boolean = false
+)
+
+enum class ToastType {
+  INFO,
+  SUCCESS,
+  WARNING
+}
+
+data class ToastMessage(
+  val text: String,
+  val type: ToastType = ToastType.INFO,
+  val timestamp: Long = System.currentTimeMillis()
+)
