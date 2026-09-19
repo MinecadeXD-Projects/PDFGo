@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,20 +43,26 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.SavedDocumentStatus
 import com.example.ui.theme.BrandBlue
 import com.example.ui.theme.BrandBlueLight
+import com.example.ui.theme.Emerald400
 import com.example.ui.theme.Rose500
 
 @Composable
 fun HomeScreen(
   urlInput: String,
   urlError: String?,
+  savedDocument: SavedDocumentStatus? = null,
   onUrlChange: (String) -> Unit,
   onPaste: (String) -> Unit,
   onOpenPdf: () -> Unit,
+  onResumeSaved: () -> Unit = {},
   onOpenSettings: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -202,7 +210,115 @@ fun HomeScreen(
           ),
       )
 
-      Spacer(modifier = Modifier.height(28.dp))
+      if (savedDocument != null) {
+        Spacer(modifier = Modifier.height(20.dp))
+        Card(
+          onClick = onResumeSaved,
+          shape = RoundedCornerShape(16.dp),
+          colors =
+            CardDefaults.cardColors(
+              containerColor = MaterialTheme.colorScheme.surface,
+            ),
+          elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+          modifier =
+            Modifier.fillMaxWidth()
+              .border(1.dp, BrandBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+              .testTag("card_resume_pdf"),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Row(
+              modifier = Modifier.weight(1f).padding(end = 12.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              Box(
+                modifier =
+                  Modifier.size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(BrandBlue.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Description,
+                  contentDescription = null,
+                  tint = BrandBlue,
+                  modifier = Modifier.size(22.dp),
+                )
+              }
+              Column {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  Text(
+                    text = "CONTINUE READING",
+                    style =
+                      MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = BrandBlue,
+                        letterSpacing = 0.8.sp,
+                        fontSize = 10.sp,
+                      ),
+                  )
+                  Box(
+                    modifier =
+                      Modifier.size(4.dp)
+                        .clip(CircleShape)
+                        .background(Emerald400),
+                  )
+                  Text(
+                    text = "Page ${savedDocument.page} of ${savedDocument.totalPages}",
+                    style =
+                      MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                      ),
+                  )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = savedDocument.title,
+                  style =
+                    MaterialTheme.typography.bodyMedium.copy(
+                      fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+            }
+
+            Button(
+              onClick = onResumeSaved,
+              shape = RoundedCornerShape(12.dp),
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = BrandBlue,
+                  contentColor = Color.White,
+                ),
+              contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+              modifier = Modifier.testTag("btn_resume_pdf"),
+            ) {
+              Text(
+                text = "Resume",
+                style =
+                  MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                  ),
+              )
+            }
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(24.dp))
 
       // Label
       Text(

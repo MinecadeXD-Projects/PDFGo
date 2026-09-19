@@ -21,6 +21,13 @@ enum class PageSpacing(val label: String, val dpValue: Int) {
   NONE("None (Continuous)", 0)
 }
 
+data class SavedDocumentStatus(
+  val url: String,
+  val title: String,
+  val page: Int,
+  val totalPages: Int
+)
+
 data class PdfDocument(
   val url: String,
   val title: String,

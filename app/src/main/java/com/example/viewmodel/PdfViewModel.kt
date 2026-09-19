@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.Environment
@@ -11,6 +12,7 @@ import com.example.model.DownloadModalState
 import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.PdfDocument
+import com.example.model.SavedDocumentStatus
 import com.example.model.Screen
 import com.example.model.SearchState
 import com.example.model.ToastMessage
@@ -74,6 +76,50 @@ class PdfViewModel(
 
   private val _saveReadingPosition = MutableStateFlow(true)
   val saveReadingPosition: StateFlow<Boolean> = _saveReadingPosition.asStateFlow()
+
+  // Saved Document Status for quick resume
+  private val _savedDocumentStatus = MutableStateFlow<SavedDocumentStatus?>(null)
+  val savedDocumentStatus: StateFlow<SavedDocumentStatus?> = _savedDocumentStatus.asStateFlow()
+
+  private val sharedPreferences by lazy {
+    try {
+      getApplication<Application>().getSharedPreferences("pdfgo_reader_prefs", Context.MODE_PRIVATE)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  init {
+    loadSavedStatus()
+  }
+
+  private fun loadSavedStatus() {
+    val prefs = sharedPreferences ?: return
+    _saveReadingPosition.value = prefs.getBoolean("pref_save_reading_position", true)
+    val lastUrl = prefs.getString("last_url", null)
+    if (!lastUrl.isNullOrBlank()) {
+      val lastTitle = prefs.getString("last_title", "Document.pdf") ?: "Document.pdf"
+      val lastPage = prefs.getInt("page_$lastUrl", 1)
+      val lastTotal = prefs.getInt("last_total_pages", 1)
+      _savedDocumentStatus.value = SavedDocumentStatus(
+        url = lastUrl,
+        title = lastTitle,
+        page = lastPage,
+        totalPages = lastTotal
+      )
+    }
+  }
+
+  private fun persistReadingPosition(url: String, title: String, page: Int, totalPages: Int) {
+    if (!_saveReadingPosition.value) return
+    sharedPreferences?.edit()
+      ?.putString("last_url", url)
+      ?.putString("last_title", title)
+      ?.putInt("page_$url", page)
+      ?.putInt("last_total_pages", totalPages)
+      ?.apply()
+    _savedDocumentStatus.value = SavedDocumentStatus(url, title, page, totalPages)
+  }
 
   // Reader state
   private val _isFullscreen = MutableStateFlow(false)
@@ -246,32 +292,46 @@ class PdfViewModel(
       _loadingProgress.value = 1.0f
       delay(50)
 
+      val savedPage = if (_saveReadingPosition.value) {
+        sharedPreferences?.getInt("page_$url", 1) ?: 1
+      } else 1
+
       if (isPdfRendered && pageBitmaps.isNotEmpty()) {
+        val initialPage = savedPage.coerceIn(1, totalPageCount)
         _activeDocument.value = PdfDocument(
           url = url,
           title = filename,
           localFilePath = localFile?.absolutePath,
           totalPages = totalPageCount,
-          currentPage = 1,
+          currentPage = initialPage,
           zoomPercent = 100,
           pageBitmaps = pageBitmaps,
           useWebViewFallback = false
         )
         _currentScreen.value = Screen.READER
-        showToast("PDF loaded successfully ($totalPageCount pages)", ToastType.SUCCESS)
+        persistReadingPosition(url, filename, initialPage, totalPageCount)
+        if (initialPage > 1) {
+          showToast("Resumed at page $initialPage of $totalPageCount", ToastType.SUCCESS)
+        } else {
+          showToast("PDF loaded successfully ($totalPageCount pages)", ToastType.SUCCESS)
+        }
       } else {
         // Use web-based viewer fallback so the user's document still opens and views!
+        val lastTotal = sharedPreferences?.getInt("last_total_pages", 1) ?: 1
+        val effectiveTotal = maxOf(totalPageCount, lastTotal, savedPage)
+        val initialPage = savedPage.coerceIn(1, effectiveTotal)
         _activeDocument.value = PdfDocument(
           url = url,
           title = filename,
           localFilePath = if (localFile?.exists() == true) localFile.absolutePath else null,
-          totalPages = 1,
-          currentPage = 1,
+          totalPages = effectiveTotal,
+          currentPage = initialPage,
           zoomPercent = 100,
           pageBitmaps = emptyList(),
           useWebViewFallback = true
         )
         _currentScreen.value = Screen.READER
+        persistReadingPosition(url, filename, initialPage, effectiveTotal)
         showToast("Opening document viewer", ToastType.INFO)
       }
     }
@@ -321,8 +381,12 @@ class PdfViewModel(
   }
 
   fun navigateBackFromReader() {
+    val doc = _activeDocument.value
+    if (doc != null) {
+      persistReadingPosition(doc.url, doc.title, doc.currentPage, doc.totalPages)
+    }
     _currentScreen.value = Screen.HOME
-    showToast("Saved active reading state", ToastType.INFO)
+    showToast("Saved page ${doc?.currentPage ?: 1}", ToastType.INFO)
   }
 
   // Settings modification
@@ -349,7 +413,18 @@ class PdfViewModel(
   }
 
   fun toggleSaveReadingPosition() {
-    _saveReadingPosition.value = !_saveReadingPosition.value
+    val newVal = !_saveReadingPosition.value
+    _saveReadingPosition.value = newVal
+    sharedPreferences?.edit()?.putBoolean("pref_save_reading_position", newVal)?.apply()
+    if (newVal) {
+      val doc = _activeDocument.value
+      if (doc != null) {
+        persistReadingPosition(doc.url, doc.title, doc.currentPage, doc.totalPages)
+      }
+      showToast("Reading position saving enabled", ToastType.INFO)
+    } else {
+      showToast("Reading position saving disabled", ToastType.INFO)
+    }
   }
 
   // Reader Controls
@@ -367,14 +442,27 @@ class PdfViewModel(
 
   fun changePage(delta: Int) {
     val doc = _activeDocument.value ?: return
-    val newPage = (doc.currentPage + delta).coerceIn(1, doc.totalPages)
-    _activeDocument.value = doc.copy(currentPage = newPage)
+    setPage(doc.currentPage + delta)
   }
 
   fun setPage(targetPage: Int) {
     val doc = _activeDocument.value ?: return
     val newPage = targetPage.coerceIn(1, doc.totalPages)
-    _activeDocument.value = doc.copy(currentPage = newPage)
+    if (doc.currentPage != newPage) {
+      _activeDocument.value = doc.copy(currentPage = newPage)
+      persistReadingPosition(doc.url, doc.title, newPage, doc.totalPages)
+    }
+  }
+
+  fun resumeSavedDocument() {
+    val active = _activeDocument.value
+    if (active != null) {
+      _currentScreen.value = Screen.READER
+      return
+    }
+    val saved = _savedDocumentStatus.value ?: return
+    _urlInput.value = saved.url
+    startLoadingPdf(saved.url)
   }
 
   fun adjustZoom(delta: Int) {
@@ -514,6 +602,16 @@ class PdfViewModel(
 
   fun executeRemovePdf() {
     _isRemoveModalOpen.value = false
+    val currentUrl = _activeDocument.value?.url
+    if (currentUrl != null) {
+      sharedPreferences?.edit()
+        ?.remove("page_$currentUrl")
+        ?.remove("last_url")
+        ?.remove("last_title")
+        ?.remove("last_total_pages")
+        ?.apply()
+    }
+    _savedDocumentStatus.value = null
     _activeDocument.value = null
     _urlInput.value = ""
     _isFullscreen.value = false

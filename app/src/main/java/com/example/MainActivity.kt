@@ -81,6 +81,7 @@ fun PdfGoApp(
   val pageSpacing by viewModel.pageSpacing.collectAsState()
   val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
   val saveReadingPosition by viewModel.saveReadingPosition.collectAsState()
+  val savedDocumentStatus by viewModel.savedDocumentStatus.collectAsState()
   val isFullscreen by viewModel.isFullscreen.collectAsState()
   val searchState by viewModel.searchState.collectAsState()
   val downloadState by viewModel.downloadState.collectAsState()
@@ -120,9 +121,11 @@ fun PdfGoApp(
             HomeScreen(
               urlInput = urlInput,
               urlError = urlError,
+              savedDocument = savedDocumentStatus,
               onUrlChange = { viewModel.onUrlChange(it) },
               onPaste = { viewModel.pasteUrl(it) },
               onOpenPdf = { viewModel.attemptOpenPdf() },
+              onResumeSaved = { viewModel.resumeSavedDocument() },
               onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
             )
           }
@@ -161,9 +164,11 @@ fun PdfGoApp(
               HomeScreen(
                 urlInput = urlInput,
                 urlError = urlError,
+                savedDocument = savedDocumentStatus,
                 onUrlChange = { viewModel.onUrlChange(it) },
                 onPaste = { viewModel.pasteUrl(it) },
                 onOpenPdf = { viewModel.attemptOpenPdf() },
+                onResumeSaved = { viewModel.resumeSavedDocument() },
                 onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
               )
             }

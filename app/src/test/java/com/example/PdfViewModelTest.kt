@@ -134,4 +134,31 @@ class PdfViewModelTest {
     viewModel.setPageSpacing(PageSpacing.COMPACT)
     assertEquals(PageSpacing.COMPACT, viewModel.pageSpacing.value)
   }
+
+  @Test
+  fun `reading position saves and restores across sessions`() = runTest(testDispatcher) {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val prefs = app.getSharedPreferences("pdfgo_reader_prefs", android.content.Context.MODE_PRIVATE)
+    prefs.edit()
+      .putString("last_url", "https://example.com/test_document.pdf")
+      .putString("last_title", "test_document.pdf")
+      .putInt("page_https://example.com/test_document.pdf", 4)
+      .putInt("last_total_pages", 10)
+      .apply()
+
+    // Create ViewModel instance representing app restart
+    val vm = PdfViewModel(app, testDispatcher)
+    val restored = vm.savedDocumentStatus.value
+    assertNotNull(restored)
+    assertEquals(4, restored?.page)
+    assertEquals("test_document.pdf", restored?.title)
+    assertEquals(10, restored?.totalPages)
+
+    // Resume saved document
+    vm.resumeSavedDocument()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, vm.currentScreen.value)
+    assertEquals(4, vm.activeDocument.value?.currentPage)
+    assertEquals(10, vm.activeDocument.value?.totalPages)
+  }
 }

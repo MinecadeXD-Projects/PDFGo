@@ -47,6 +47,11 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -60,16 +65,23 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -89,6 +101,7 @@ import com.example.ui.theme.Rose500
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import java.net.URLEncoder
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ReaderScreen(
@@ -110,17 +123,60 @@ fun ReaderScreen(
   onToggleFitMode: () -> Unit,
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
-  onAdjustZoom: (Int) -> Unit,
+  onAdjustZoom: (Int) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
   val lazyListState = rememberLazyListState()
 
-  // Animate scroll when currentPage changes from controls
-  LaunchedEffect(document.currentPage) {
-    if (document.pageBitmaps.isNotEmpty()) {
+  // Two-finger pinch to zoom & pan state
+  var zoomScale by remember { mutableFloatStateOf(1f) }
+  var panOffset by remember { mutableStateOf(Offset.Zero) }
+
+  val resetZoom = {
+    zoomScale = 1f
+    panOffset = Offset.Zero
+  }
+
+  // Jump immediately to initial/saved page on document load
+  LaunchedEffect(document.url) {
+    if (document.currentPage > 1 && document.pageBitmaps.isNotEmpty()) {
       val targetIndex = (document.currentPage - 1).coerceIn(0, document.pageBitmaps.size - 1)
-      lazyListState.animateScrollToItem(targetIndex)
+      lazyListState.scrollToItem(targetIndex)
+    }
+  }
+
+  // Observe scroll position to update the page counter dynamically as user scrolls
+  LaunchedEffect(lazyListState) {
+    snapshotFlow {
+      val layoutInfo = lazyListState.layoutInfo
+      val visibleItems = layoutInfo.visibleItemsInfo
+      if (visibleItems.isNotEmpty()) {
+        val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+        val mostVisible = visibleItems.minByOrNull { item ->
+          val itemCenter = item.offset + item.size / 2
+          kotlin.math.abs(itemCenter - viewportCenter)
+        }
+        (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
+      } else {
+        lazyListState.firstVisibleItemIndex + 1
+      }
+    }
+      .distinctUntilChanged()
+      .collect { page ->
+        if (lazyListState.isScrollInProgress && page != document.currentPage) {
+          onSetPage(page)
+        }
+      }
+  }
+
+  // Animate scroll when currentPage changes from button controls (Prev/Next)
+  LaunchedEffect(document.currentPage) {
+    if (document.pageBitmaps.isNotEmpty() && !lazyListState.isScrollInProgress) {
+      val targetIndex = (document.currentPage - 1).coerceIn(0, document.pageBitmaps.size - 1)
+      if (lazyListState.firstVisibleItemIndex != targetIndex) {
+        lazyListState.animateScrollToItem(targetIndex)
+      }
     }
   }
 
@@ -476,148 +532,259 @@ fun ReaderScreen(
         }
       }
 
-      // Main PDF Viewport (Render the user's actual document)
-      val scaleFactor = document.zoomPercent / 100f
+      // Main PDF Viewport (Render the user's actual document with two-finger pinch-to-zoom and pan)
       val pageGap = pageSpacing.dpValue.dp
 
       Box(
         modifier =
           Modifier.weight(1f)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .clipToBounds()
+            .pointerInput(Unit) {
+              detectTapGestures(
+                onDoubleTap = { tapOffset ->
+                  if (zoomScale > 1.05f) {
+                    resetZoom()
+                  } else {
+                    zoomScale = 2.2f
+                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
+                    val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
+                    val maxPanX = (size.width * 1.2f) / 2f
+                    val maxPanY = (size.height * 1.2f) / 2f
+                    panOffset = Offset(
+                      targetPanX.coerceIn(-maxPanX, maxPanX),
+                      targetPanY.coerceIn(-maxPanY, maxPanY)
+                    )
+                  }
+                }
+              )
+            }
+            .pointerInput(Unit) {
+              awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                do {
+                  val event = awaitPointerEvent()
+                  val activePointers = event.changes.filter { it.pressed }
+
+                  if (activePointers.size >= 2) {
+                    // Two fingers: fluid pinch-to-zoom & pan across the document
+                    val zoomChange = event.calculateZoom()
+                    val panChange = event.calculatePan()
+
+                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
+                    if (newScale <= 1.01f) {
+                      zoomScale = 1f
+                      panOffset = Offset.Zero
+                    } else {
+                      val maxPanX = (size.width * (newScale - 1f)) / 2f
+                      val maxPanY = (size.height * (newScale - 1f)) / 2f
+                      val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
+                      val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+                      zoomScale = newScale
+                      panOffset = Offset(newX, newY)
+                    }
+                    event.changes.forEach {
+                      if (it.positionChanged()) it.consume()
+                    }
+                  } else if (activePointers.size == 1 && zoomScale > 1.05f) {
+                    // One finger when zoomed in: pan around the enlarged document
+                    val panChange = event.calculatePan()
+                    val maxPanX = (size.width * (zoomScale - 1f)) / 2f
+                    val maxPanY = (size.height * (zoomScale - 1f)) / 2f
+                    val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
+                    val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+                    panOffset = Offset(newX, newY)
+                    event.changes.forEach {
+                      if (it.positionChanged()) it.consume()
+                    }
+                  }
+                  // When activePointers.size == 1 and zoomScale <= 1.05f:
+                  // Nothing is consumed, so single finger vertical scrolling on LazyColumn works seamlessly!
+                } while (event.changes.any { it.pressed })
+              }
+            },
         contentAlignment = Alignment.TopCenter,
       ) {
-        if (document.pageBitmaps.isNotEmpty()) {
-          // Native PdfRenderer pages from user's PDF
-          LazyColumn(
-            state = lazyListState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(pageGap),
-          ) {
-            itemsIndexed(document.pageBitmaps) { index, bitmap ->
-              val pageNum = index + 1
-              Card(
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                modifier =
-                  Modifier
-                    .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
-                    .fillMaxWidth()
-                    .scale(scaleFactor)
-                    .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp)),
-              ) {
-                Column {
-                  Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Page $pageNum of ${document.totalPages}",
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.FillWidth,
-                  )
+        Box(
+          modifier =
+            Modifier.fillMaxSize()
+              .graphicsLayer {
+                scaleX = zoomScale
+                scaleY = zoomScale
+                translationX = panOffset.x
+                translationY = panOffset.y
+              }
+        ) {
+          if (document.pageBitmaps.isNotEmpty()) {
+            // Native PdfRenderer pages from user's PDF
+            LazyColumn(
+              state = lazyListState,
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(pageGap),
+            ) {
+              itemsIndexed(document.pageBitmaps) { index, bitmap ->
+                val pageNum = index + 1
+                Card(
+                  shape = RoundedCornerShape(8.dp),
+                  colors = CardDefaults.cardColors(containerColor = Color.White),
+                  elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                  modifier =
+                    Modifier
+                      .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
+                      .fillMaxWidth()
+                      .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp)),
+                ) {
+                  Column {
+                    Image(
+                      bitmap = bitmap.asImageBitmap(),
+                      contentDescription = "Page $pageNum of ${document.totalPages}",
+                      modifier = Modifier.fillMaxWidth(),
+                      contentScale = ContentScale.FillWidth,
+                    )
 
-                  // Document Page Footer
-                  Row(
-                    modifier =
-                      Modifier.fillMaxWidth()
-                        .background(Color(0xFFF8FAFC))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                  ) {
-                    Text(
-                      text = document.title,
-                      style =
-                        MaterialTheme.typography.labelSmall.copy(
-                          color = Color(0xFF64748B),
-                          fontSize = 10.sp,
-                        ),
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                      modifier = Modifier.weight(1f).padding(end = 8.dp),
-                    )
-                    Text(
-                      text = "Page $pageNum of ${document.totalPages}",
-                      style =
-                        MaterialTheme.typography.labelSmall.copy(
-                          fontFamily = FontFamily.Monospace,
-                          color = Color(0xFF64748B),
-                          fontSize = 10.sp,
-                        ),
-                    )
+                    // Document Page Footer
+                    Row(
+                      modifier =
+                        Modifier.fillMaxWidth()
+                          .background(Color(0xFFF8FAFC))
+                          .padding(horizontal = 16.dp, vertical = 8.dp),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Text(
+                        text = document.title,
+                        style =
+                          MaterialTheme.typography.labelSmall.copy(
+                            color = Color(0xFF64748B),
+                            fontSize = 10.sp,
+                          ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                      )
+                      Text(
+                        text = "Page $pageNum of ${document.totalPages}",
+                        style =
+                          MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF64748B),
+                            fontSize = 10.sp,
+                          ),
+                      )
+                    }
                   }
                 }
               }
             }
-          }
-        } else if (document.useWebViewFallback) {
-          // Real WebView rendering user's PDF
-          AndroidView(
-            factory = { ctx ->
-              WebView(ctx).apply {
-                layoutParams =
-                  ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                  )
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.builtInZoomControls = true
-                settings.displayZoomControls = false
-                settings.loadWithOverviewMode = true
-                settings.useWideViewPort = true
-                settings.allowFileAccess = true
-                settings.setSupportZoom(true)
-                webViewClient =
-                  object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(
-                      view: WebView?,
-                      request: WebResourceRequest?,
-                    ): Boolean {
-                      return false
+          } else if (document.useWebViewFallback) {
+            // Real WebView rendering user's PDF
+            AndroidView(
+              factory = { ctx ->
+                WebView(ctx).apply {
+                  layoutParams =
+                    ViewGroup.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                  settings.javaScriptEnabled = true
+                  settings.domStorageEnabled = true
+                  settings.builtInZoomControls = true
+                  settings.displayZoomControls = false
+                  settings.loadWithOverviewMode = true
+                  settings.useWideViewPort = true
+                  settings.allowFileAccess = true
+                  settings.setSupportZoom(true)
+                  webViewClient =
+                    object : WebViewClient() {
+                      override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                      ): Boolean {
+                        return false
+                      }
                     }
-                  }
-                val encodedUrl = URLEncoder.encode(document.url, "UTF-8")
-                loadUrl("https://docs.google.com/viewer?url=$encodedUrl&embedded=true")
-              }
-            },
-            modifier = Modifier.fillMaxSize(),
-          )
-        } else {
-          // Fallback document card for testing / unit test environments
-          Card(
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            modifier =
-              Modifier.fillMaxWidth()
-                .widthIn(max = 520.dp)
-                .padding(24.dp),
-          ) {
-            Column(
-              modifier = Modifier.padding(24.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+                  val encodedUrl = URLEncoder.encode(document.url, "UTF-8")
+                  loadUrl("https://docs.google.com/viewer?url=$encodedUrl&embedded=true")
+                }
+              },
+              modifier = Modifier.fillMaxSize(),
+            )
+          } else {
+            // Fallback document card for testing / unit test environments
+            Card(
+              shape = RoundedCornerShape(8.dp),
+              colors = CardDefaults.cardColors(containerColor = Color.White),
+              elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .widthIn(max = 520.dp)
+                  .padding(24.dp),
             ) {
-              Icon(
-                imageVector = Icons.Default.Description,
-                contentDescription = null,
-                tint = BrandBlue,
-                modifier = Modifier.size(48.dp),
-              )
+              Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Description,
+                  contentDescription = null,
+                  tint = BrandBlue,
+                  modifier = Modifier.size(48.dp),
+                )
+                Text(
+                  text = document.title,
+                  style =
+                    MaterialTheme.typography.titleMedium.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFF0F172A),
+                    ),
+                )
+                Text(
+                  text = document.url,
+                  style =
+                    MaterialTheme.typography.bodySmall.copy(
+                      color = Color(0xFF64748B),
+                    ),
+                )
+              }
+            }
+          }
+        }
+
+        // Floating Reset Zoom Pill at Top Right when zoomed in
+        if (zoomScale > 1.05f) {
+          Surface(
+            onClick = resetZoom,
+            shape = RoundedCornerShape(50.dp),
+            color = Slate900.copy(alpha = 0.9f),
+            contentColor = Color.White,
+            shadowElevation = 6.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).testTag("btn_reset_zoom"),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
               Text(
-                text = document.title,
+                text = "${(zoomScale * 100).toInt()}%",
                 style =
-                  MaterialTheme.typography.titleMedium.copy(
+                  MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF0F172A),
+                    color = Emerald400,
+                    fontSize = 11.sp,
                   ),
               )
               Text(
-                text = document.url,
+                text = "Tap to reset",
                 style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    color = Color(0xFF64748B),
+                  MaterialTheme.typography.labelSmall.copy(
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
                   ),
               )
             }
@@ -740,56 +907,15 @@ fun ReaderScreen(
           // Next Page Button
           IconButton(
             onClick = { onChangePage(1) },
+            enabled = document.currentPage < document.totalPages,
             modifier = Modifier.size(32.dp).testTag("btn_page_next"),
           ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowForward,
               contentDescription = "Next Page",
-              tint = Color.White,
+              tint = if (document.currentPage < document.totalPages) Color.White else Color.White.copy(alpha = 0.35f),
               modifier = Modifier.size(16.dp),
             )
-          }
-
-          VerticalDivider(
-            modifier = Modifier.height(18.dp),
-            color = Slate800,
-            thickness = 1.dp,
-          )
-
-          // Zoom Controls
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-              onClick = { onAdjustZoom(-10) },
-              modifier = Modifier.size(28.dp).testTag("btn_zoom_out"),
-            ) {
-              Text(
-                text = "－",
-                color = Color.White.copy(alpha = 0.8f),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-              )
-            }
-            Text(
-              text = "${document.zoomPercent}%",
-              style =
-                MaterialTheme.typography.labelSmall.copy(
-                  fontFamily = FontFamily.Monospace,
-                  color = Color.White,
-                  fontSize = 11.sp,
-                ),
-              modifier = Modifier.padding(horizontal = 2.dp),
-            )
-            IconButton(
-              onClick = { onAdjustZoom(10) },
-              modifier = Modifier.size(28.dp).testTag("btn_zoom_in"),
-            ) {
-              Text(
-                text = "＋",
-                color = Color.White.copy(alpha = 0.8f),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-              )
-            }
           }
         }
       }
