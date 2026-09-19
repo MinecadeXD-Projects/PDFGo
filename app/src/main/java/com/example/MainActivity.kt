@@ -127,7 +127,7 @@ fun PdfGoApp(
               onOpenPdf = { viewModel.attemptOpenPdf() },
               onResumeSaved = { viewModel.resumeSavedDocument() },
               onRemovePdf = { viewModel.openRemovePdfModal() },
-              onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
+              onOpenSettings = { viewModel.openSettings(Screen.HOME) },
             )
           }
 
@@ -155,11 +155,12 @@ fun PdfGoApp(
                 onDismissSearchNotice = { viewModel.dismissSearchNotice() },
                 onOpenDownloadModal = { viewModel.openDownloadModal() },
                 onOpenRemoveModal = { viewModel.openRemovePdfModal() },
-                onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
+                onOpenSettings = { viewModel.openSettings(Screen.READER) },
                 onToggleFitMode = { viewModel.toggleFitMode() },
                 onChangePage = { viewModel.changePage(it) },
                 onSetPage = { viewModel.setPage(it) },
                 onAdjustZoom = { viewModel.adjustZoom(it) },
+                getPageBitmap = { viewModel.loadPageBitmap(it) },
               )
             } ?: run {
               HomeScreen(
@@ -171,7 +172,7 @@ fun PdfGoApp(
                 onOpenPdf = { viewModel.attemptOpenPdf() },
                 onResumeSaved = { viewModel.resumeSavedDocument() },
                 onRemovePdf = { viewModel.openRemovePdfModal() },
-                onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
+                onOpenSettings = { viewModel.openSettings(Screen.HOME) },
               )
             }
           }

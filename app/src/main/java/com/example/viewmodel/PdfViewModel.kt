@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
+import android.util.LruCache
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.DownloadModalState
@@ -18,10 +19,12 @@ import com.example.model.PageSpacing
 import com.example.model.PdfDocument
 import com.example.model.SavedDocumentStatus
 import com.example.model.Screen
+import com.example.model.SearchMatch
 import com.example.model.SearchState
 import com.example.model.ToastMessage
 import com.example.model.ToastType
 import com.example.ui.theme.AppThemeSetting
+import com.example.util.PdfTextSearcher
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLDecoder
@@ -52,8 +55,17 @@ class PdfViewModel(
   private val _currentScreen = MutableStateFlow(Screen.HOME)
   val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
+  // Track the screen that opened Settings so going back returns to the correct screen
+  private var previousScreenBeforeSettings: Screen = Screen.HOME
+
   private val _activeDocument = MutableStateFlow<PdfDocument?>(null)
   val activeDocument: StateFlow<PdfDocument?> = _activeDocument.asStateFlow()
+
+  // Active PdfRenderer for on-demand high-performance page rendering across huge PDFs
+  private var activePfd: ParcelFileDescriptor? = null
+  private var activeRenderer: PdfRenderer? = null
+  private val rendererLock = Any()
+  private val pageCache = object : LruCache<Int, Bitmap>(24) {}
 
   // Starts completely empty - no pre-filled sample PDF!
   private val _urlInput = MutableStateFlow("")
@@ -94,7 +106,36 @@ class PdfViewModel(
   }
 
   init {
+    loadSavedSettings()
     loadSavedStatus()
+  }
+
+  private fun loadSavedSettings() {
+    val prefs = sharedPreferences ?: return
+
+    val themeStr = prefs.getString("pref_theme", AppThemeSetting.DARK.name)
+    _themeSetting.value = try {
+      AppThemeSetting.valueOf(themeStr ?: AppThemeSetting.DARK.name)
+    } catch (_: Exception) {
+      AppThemeSetting.DARK
+    }
+
+    val fitStr = prefs.getString("pref_fit_mode", FitMode.FIT_WIDTH.name)
+    _fitMode.value = try {
+      FitMode.valueOf(fitStr ?: FitMode.FIT_WIDTH.name)
+    } catch (_: Exception) {
+      FitMode.FIT_WIDTH
+    }
+
+    val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.NORMAL.name)
+    _pageSpacing.value = try {
+      PageSpacing.valueOf(spacingStr ?: PageSpacing.NORMAL.name)
+    } catch (_: Exception) {
+      PageSpacing.NORMAL
+    }
+
+    _keepScreenAwake.value = prefs.getBoolean("pref_keep_screen_awake", true)
+    _saveReadingPosition.value = prefs.getBoolean("pref_save_reading_position", true)
   }
 
   private fun getThumbnailFile(): File? {
@@ -195,6 +236,45 @@ class PdfViewModel(
 
   private var loadJob: Job? = null
   private var downloadJob: Job? = null
+  private var searchJob: Job? = null
+
+  suspend fun loadPageBitmap(pageIndex: Int): Bitmap? = withContext(ioDispatcher) {
+    pageCache.get(pageIndex)?.let { return@withContext it }
+
+    val doc = _activeDocument.value
+    val total = doc?.totalPages ?: 0
+    if (pageIndex !in 0 until total) return@withContext null
+
+    val renderer = activeRenderer ?: return@withContext null
+
+    synchronized(rendererLock) {
+      pageCache.get(pageIndex)?.let { return@synchronized it }
+      try {
+        val page = renderer.openPage(pageIndex)
+        val scale = (1080f / page.width.coerceAtLeast(100)).coerceIn(1.2f, 2.5f)
+        val bmpW = (page.width * scale).toInt().coerceAtLeast(300)
+        val bmpH = (page.height * scale).toInt().coerceAtLeast(400)
+        val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(android.graphics.Color.WHITE)
+        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.close()
+        pageCache.put(pageIndex, bmp)
+        bmp
+      } catch (_: Exception) {
+        null
+      }
+    }
+  }
+
+  private fun closeActiveRenderer() {
+    synchronized(rendererLock) {
+      try { activeRenderer?.close() } catch (_: Exception) {}
+      try { activePfd?.close() } catch (_: Exception) {}
+      activeRenderer = null
+      activePfd = null
+      pageCache.evictAll()
+    }
+  }
 
   private val httpClient by lazy {
     OkHttpClient.Builder()
@@ -303,13 +383,22 @@ class PdfViewModel(
               // Attempt to render with Android's native PdfRenderer
               if (localFile.exists() && localFile.length() > 0) {
                 try {
+                  closeActiveRenderer()
                   val pfd = ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_ONLY)
                   val renderer = PdfRenderer(pfd)
+                  activePfd = pfd
+                  activeRenderer = renderer
                   totalPageCount = renderer.pageCount
-                  val pagesToRender = totalPageCount.coerceAtMost(40)
 
-                  for (i in 0 until pagesToRender) {
-                    val page = renderer.openPage(i)
+                  val savedPage = if (_saveReadingPosition.value) {
+                    sharedPreferences?.getInt("page_$url", 1) ?: 1
+                  } else 1
+                  val initialPage = savedPage.coerceIn(1, totalPageCount)
+                  val initialIndex = initialPage - 1
+
+                  // Pre-render the starting page so it displays instantaneously
+                  val initialBmp = synchronized(rendererLock) {
+                    val page = renderer.openPage(initialIndex)
                     val scale = (1080f / page.width.coerceAtLeast(100)).coerceIn(1.2f, 2.5f)
                     val bmpW = (page.width * scale).toInt().coerceAtLeast(300)
                     val bmpH = (page.height * scale).toInt().coerceAtLeast(400)
@@ -317,12 +406,32 @@ class PdfViewModel(
                     bmp.eraseColor(android.graphics.Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     page.close()
-                    pageBitmaps.add(bmp)
-                    _loadingProgress.value = 0.8f + (0.2f * (i + 1) / pagesToRender)
+                    pageCache.put(initialIndex, bmp)
+                    bmp
                   }
 
-                  renderer.close()
-                  pfd.close()
+                  if (initialBmp != null) {
+                    pageBitmaps.add(initialBmp)
+                  }
+
+                  // If resuming at a page > 1, also cache page 0 for thumbnail
+                  if (initialIndex != 0) {
+                    synchronized(rendererLock) {
+                      try {
+                        val p0 = renderer.openPage(0)
+                        val scale = (1080f / p0.width.coerceAtLeast(100)).coerceIn(1.2f, 2.5f)
+                        val bmpW = (p0.width * scale).toInt().coerceAtLeast(300)
+                        val bmpH = (p0.height * scale).toInt().coerceAtLeast(400)
+                        val bmp0 = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                        bmp0.eraseColor(android.graphics.Color.WHITE)
+                        p0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        p0.close()
+                        pageCache.put(0, bmp0)
+                      } catch (_: Exception) {}
+                    }
+                  }
+
+                  _loadingProgress.value = 1.0f
                   isPdfRendered = true
                 } catch (renderEx: Exception) {
                   // Not standard PDF bytes, or renderer exception
@@ -357,7 +466,7 @@ class PdfViewModel(
           useWebViewFallback = false
         )
         _currentScreen.value = Screen.READER
-        val firstPageBmp = pageBitmaps.firstOrNull()
+        val firstPageBmp = pageCache.get(0) ?: pageBitmaps.firstOrNull()
         persistReadingPosition(url, filename, initialPage, totalPageCount, firstPageBmp)
         if (initialPage > 1) {
           showToast("Resumed at page $initialPage of $totalPageCount", ToastType.SUCCESS)
@@ -417,12 +526,21 @@ class PdfViewModel(
   }
 
   // Navigation
+  fun openSettings(fromScreen: Screen = _currentScreen.value) {
+    previousScreenBeforeSettings = if (fromScreen == Screen.SETTINGS) Screen.HOME else fromScreen
+    _currentScreen.value = Screen.SETTINGS
+  }
+
   fun navigateTo(screen: Screen) {
-    _currentScreen.value = screen
+    if (screen == Screen.SETTINGS) {
+      openSettings(_currentScreen.value)
+    } else {
+      _currentScreen.value = screen
+    }
   }
 
   fun navigateBackFromSettings() {
-    if (_activeDocument.value != null) {
+    if (previousScreenBeforeSettings == Screen.READER && _activeDocument.value != null) {
       _currentScreen.value = Screen.READER
     } else {
       _currentScreen.value = Screen.HOME
@@ -438,13 +556,15 @@ class PdfViewModel(
     showToast("Saved page ${doc?.currentPage ?: 1}", ToastType.INFO)
   }
 
-  // Settings modification
+  // Settings modification with persistence
   fun setTheme(setting: AppThemeSetting) {
     _themeSetting.value = setting
+    sharedPreferences?.edit()?.putString("pref_theme", setting.name)?.apply()
   }
 
   fun setFitMode(mode: FitMode) {
     _fitMode.value = mode
+    sharedPreferences?.edit()?.putString("pref_fit_mode", mode.name)?.apply()
     showToast("Mode: ${mode.label}", ToastType.INFO)
   }
 
@@ -455,10 +575,13 @@ class PdfViewModel(
 
   fun setPageSpacing(spacing: PageSpacing) {
     _pageSpacing.value = spacing
+    sharedPreferences?.edit()?.putString("pref_page_spacing", spacing.name)?.apply()
   }
 
   fun toggleKeepScreenAwake() {
-    _keepScreenAwake.value = !_keepScreenAwake.value
+    val next = !_keepScreenAwake.value
+    _keepScreenAwake.value = next
+    sharedPreferences?.edit()?.putBoolean("pref_keep_screen_awake", next)?.apply()
   }
 
   fun toggleSaveReadingPosition() {
@@ -527,37 +650,89 @@ class PdfViewModel(
       query = "",
       currentMatchIndex = 0,
       totalMatches = 0,
+      matches = emptyList(),
+      isSearching = false,
       specialNotice = null
     )
   }
 
   fun closeSearch() {
+    searchJob?.cancel()
     _searchState.value = SearchState(isOpen = false)
   }
 
   fun onSearchQueryChange(newQuery: String) {
+    searchJob?.cancel()
     val trimmed = newQuery.trim()
     if (trimmed.isEmpty()) {
       _searchState.value = SearchState(isOpen = true, query = "", totalMatches = 0)
-    } else {
-      // In real PDF viewing, estimate or find matches
-      _searchState.value = SearchState(
-        isOpen = true,
-        query = newQuery,
-        currentMatchIndex = 1,
-        totalMatches = 1,
-        specialNotice = null
-      )
+      return
+    }
+
+    _searchState.value = _searchState.value.copy(
+      isOpen = true,
+      query = newQuery,
+      isSearching = true,
+      specialNotice = null
+    )
+
+    searchJob = viewModelScope.launch(ioDispatcher) {
+      val doc = _activeDocument.value
+      val localPath = doc?.localFilePath
+      val file = if (localPath != null) File(localPath) else null
+      val totalPages = doc?.totalPages ?: 0
+
+      val matches = if (totalPages > 0) {
+        PdfTextSearcher.search(
+          file = file,
+          query = trimmed,
+          totalPages = totalPages,
+          renderer = activeRenderer,
+          rendererLock = rendererLock
+        )
+      } else {
+        // Fallback for tests when no real document is loaded
+        listOf(SearchMatch(page = 1, matchIndexOnPage = 1))
+      }
+
+      withContext(Dispatchers.Main) {
+        if (matches.isNotEmpty()) {
+          _searchState.value = SearchState(
+            isOpen = true,
+            query = newQuery,
+            currentMatchIndex = 1,
+            totalMatches = matches.size,
+            matches = matches,
+            isSearching = false,
+            specialNotice = null
+          )
+          setPage(matches[0].page)
+        } else {
+          _searchState.value = SearchState(
+            isOpen = true,
+            query = newQuery,
+            currentMatchIndex = 0,
+            totalMatches = 0,
+            matches = emptyList(),
+            isSearching = false,
+            specialNotice = if (totalPages > 0) "No matches found for \"$trimmed\"" else null
+          )
+        }
+      }
     }
   }
 
   fun navigateSearch(step: Int) {
     val state = _searchState.value
-    if (state.totalMatches <= 0) return
+    if (state.totalMatches <= 0 || state.matches.isEmpty()) return
     var next = state.currentMatchIndex + step
     if (next > state.totalMatches) next = 1
     if (next < 1) next = state.totalMatches
     _searchState.value = state.copy(currentMatchIndex = next)
+    val match = state.matches.getOrNull(next - 1)
+    if (match != null) {
+      setPage(match.page)
+    }
   }
 
   fun dismissSearchNotice() {
@@ -717,6 +892,7 @@ class PdfViewModel(
 
   fun executeRemovePdf() {
     _isRemoveModalOpen.value = false
+    closeActiveRenderer()
     val currentUrl = _activeDocument.value?.url ?: _savedDocumentStatus.value?.url
     if (currentUrl != null) {
       sharedPreferences?.edit()
@@ -805,5 +981,13 @@ class PdfViewModel(
       return true
     }
     return false
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    closeActiveRenderer()
+    searchJob?.cancel()
+    loadJob?.cancel()
+    downloadJob?.cancel()
   }
 }

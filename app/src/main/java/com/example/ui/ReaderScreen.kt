@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +48,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -131,6 +134,7 @@ fun ReaderScreen(
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
   onAdjustZoom: (Int) -> Unit = {},
+  getPageBitmap: (suspend (Int) -> Bitmap?)? = null,
   modifier: Modifier = Modifier,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
@@ -148,9 +152,20 @@ fun ReaderScreen(
 
   // Jump immediately to initial/saved page on document load
   LaunchedEffect(document.url) {
-    if (document.currentPage > 1 && document.pageBitmaps.isNotEmpty()) {
-      val targetIndex = (document.currentPage - 1).coerceIn(0, document.pageBitmaps.size - 1)
+    if (document.currentPage > 1 && document.totalPages > 0) {
+      val targetIndex = (document.currentPage - 1).coerceIn(0, document.totalPages - 1)
       lazyListState.scrollToItem(targetIndex)
+    }
+  }
+
+  // Auto-scroll when active search match changes
+  LaunchedEffect(searchState.currentMatchIndex) {
+    if (searchState.isOpen && searchState.matches.isNotEmpty()) {
+      val currentMatch = searchState.matches.getOrNull(searchState.currentMatchIndex - 1)
+      if (currentMatch != null && document.totalPages > 0) {
+        val targetIndex = (currentMatch.page - 1).coerceIn(0, document.totalPages - 1)
+        lazyListState.animateScrollToItem(targetIndex)
+      }
     }
   }
 
@@ -165,9 +180,10 @@ fun ReaderScreen(
           val itemCenter = item.offset + item.size / 2
           kotlin.math.abs(itemCenter - viewportCenter)
         }
-        (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
+        val calculated = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
+        calculated.coerceIn(1, maxOf(1, document.totalPages))
       } else {
-        lazyListState.firstVisibleItemIndex + 1
+        (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, maxOf(1, document.totalPages))
       }
     }
       .distinctUntilChanged()
@@ -178,12 +194,11 @@ fun ReaderScreen(
       }
   }
 
-  // Helper lambda to scroll by page delta cleanly without overshooting
+  // Helper lambda to scroll by page delta cleanly across all pages in the PDF
   val navigateToPageDelta: (Int) -> Unit = { delta ->
-    if (document.pageBitmaps.isNotEmpty()) {
-      // Determine current index from first visible item or layout info
+    if (document.totalPages > 0) {
       val currentIdx = lazyListState.firstVisibleItemIndex
-      val nextIdx = (currentIdx + delta).coerceIn(0, document.pageBitmaps.size - 1)
+      val nextIdx = (currentIdx + delta).coerceIn(0, document.totalPages - 1)
       val targetPage = nextIdx + 1
       onSetPage(targetPage)
       coroutineScope.launch {
@@ -637,8 +652,8 @@ fun ReaderScreen(
                 translationY = panOffset.y
               }
         ) {
-          if (document.pageBitmaps.isNotEmpty()) {
-            // Native PdfRenderer pages from user's PDF
+          if (document.totalPages > 0 && !document.useWebViewFallback) {
+            // Native PdfRenderer pages from user's PDF (all pages rendered dynamically on-demand)
             LazyColumn(
               state = lazyListState,
               modifier = Modifier.fillMaxSize(),
@@ -646,69 +661,25 @@ fun ReaderScreen(
               horizontalAlignment = Alignment.CenterHorizontally,
               verticalArrangement = Arrangement.spacedBy(pageGap),
             ) {
-              itemsIndexed(document.pageBitmaps) { index, bitmap ->
+              items(
+                count = document.totalPages,
+                key = { it }
+              ) { index ->
                 val pageNum = index + 1
-                Card(
-                  shape = RoundedCornerShape(8.dp),
-                  colors = CardDefaults.cardColors(containerColor = Color.White),
-                  elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                  modifier =
-                    Modifier
-                      .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
-                      .fillMaxWidth()
-                      .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp)),
-                ) {
-                  Box(modifier = Modifier.fillMaxWidth()) {
-                    Image(
-                      bitmap = bitmap.asImageBitmap(),
-                      contentDescription = "Page $pageNum of ${document.totalPages}",
-                      modifier = Modifier.fillMaxWidth(),
-                      contentScale = ContentScale.FillWidth,
-                    )
+                val isMatchedPage = searchState.isOpen && searchState.matches.any { it.page == pageNum }
+                val isCurrentMatchPage = searchState.isOpen &&
+                  searchState.matches.getOrNull(searchState.currentMatchIndex - 1)?.page == pageNum
 
-                    // Page counter shown directly on the page itself (floating pill top-right)
-                    Surface(
-                      shape = RoundedCornerShape(8.dp),
-                      color = Slate900.copy(alpha = 0.78f),
-                      contentColor = Color.White,
-                      modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
-                    ) {
-                      Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                      ) {
-                        Text(
-                          text = "$pageNum",
-                          style =
-                            MaterialTheme.typography.labelSmall.copy(
-                              fontFamily = FontFamily.Monospace,
-                              fontWeight = FontWeight.Bold,
-                              fontSize = 11.sp,
-                              color = Color.White,
-                            ),
-                        )
-                        Text(
-                          text = "/",
-                          style =
-                            MaterialTheme.typography.labelSmall.copy(
-                              fontSize = 10.sp,
-                              color = Color.White.copy(alpha = 0.55f),
-                            ),
-                        )
-                        Text(
-                          text = "${document.totalPages}",
-                          style =
-                            MaterialTheme.typography.labelSmall.copy(
-                              fontFamily = FontFamily.Monospace,
-                              fontSize = 10.sp,
-                              color = Color.White.copy(alpha = 0.8f),
-                            ),
-                        )
-                      }
-                    }
-                  }
-                }
+                PdfPageCard(
+                  pageNumber = pageNum,
+                  totalPages = document.totalPages,
+                  preloadedBitmap = document.pageBitmaps.getOrNull(index),
+                  getPageBitmap = getPageBitmap,
+                  pageIndex = index,
+                  fitMode = fitMode,
+                  isMatchedPage = isMatchedPage,
+                  isCurrentMatchPage = isCurrentMatchPage,
+                )
               }
             }
           } else if (document.useWebViewFallback) {
@@ -951,6 +922,156 @@ fun ReaderScreen(
               contentDescription = "Next Page",
               tint = if (document.currentPage < document.totalPages) Color.White else Color.White.copy(alpha = 0.35f),
               modifier = Modifier.size(16.dp),
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun PdfPageCard(
+  pageNumber: Int,
+  totalPages: Int,
+  preloadedBitmap: Bitmap?,
+  getPageBitmap: (suspend (Int) -> Bitmap?)?,
+  pageIndex: Int,
+  fitMode: FitMode,
+  isMatchedPage: Boolean,
+  isCurrentMatchPage: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
+  var isLoading by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
+
+  LaunchedEffect(pageIndex, preloadedBitmap) {
+    if (preloadedBitmap != null) {
+      bitmap = preloadedBitmap
+      isLoading = false
+    } else if (getPageBitmap != null) {
+      isLoading = true
+      val loaded = getPageBitmap(pageIndex)
+      bitmap = loaded
+      isLoading = false
+    }
+  }
+
+  val borderColor = when {
+    isCurrentMatchPage -> BrandBlue
+    isMatchedPage -> Amber500
+    else -> Color(0xFFCBD5E1)
+  }
+  val borderWidth = if (isCurrentMatchPage) 2.5.dp else if (isMatchedPage) 1.5.dp else 1.dp
+
+  Card(
+    shape = RoundedCornerShape(8.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
+    modifier = modifier
+      .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
+      .fillMaxWidth()
+      .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .then(if (bitmap == null) Modifier.aspectRatio(0.707f) else Modifier),
+      contentAlignment = Alignment.Center
+    ) {
+      if (bitmap != null) {
+        Image(
+          bitmap = bitmap!!.asImageBitmap(),
+          contentDescription = "Page $pageNumber of $totalPages",
+          modifier = Modifier.fillMaxWidth(),
+          contentScale = ContentScale.FillWidth,
+        )
+      } else {
+        // Clean placeholder while page renders
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF8FAFC)),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.Center,
+        ) {
+          if (isLoading) {
+            CircularProgressIndicator(
+              color = BrandBlue,
+              modifier = Modifier.size(32.dp),
+              strokeWidth = 2.5.dp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+          }
+          Text(
+            text = "Page $pageNumber",
+            style = MaterialTheme.typography.bodyMedium.copy(
+              color = Slate700,
+              fontWeight = FontWeight.SemiBold
+            )
+          )
+        }
+      }
+
+      // Page counter / search match indicators top-right
+      Row(
+        modifier = Modifier
+          .align(Alignment.TopEnd)
+          .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        if (isCurrentMatchPage) {
+          Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = BrandBlue,
+            contentColor = Color.White,
+          ) {
+            Text(
+              text = "MATCH",
+              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+              style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White
+              )
+            )
+          }
+        }
+
+        Surface(
+          shape = RoundedCornerShape(8.dp),
+          color = Slate900.copy(alpha = 0.78f),
+          contentColor = Color.White,
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            Text(
+              text = "$pageNumber",
+              style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = Color.White,
+              ),
+            )
+            Text(
+              text = "/",
+              style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.55f),
+              ),
+            )
+            Text(
+              text = "$totalPages",
+              style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.8f),
+              ),
             )
           }
         }

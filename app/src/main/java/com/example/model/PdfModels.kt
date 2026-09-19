@@ -41,11 +41,19 @@ data class PdfDocument(
   val loadError: String? = null
 )
 
+data class SearchMatch(
+  val page: Int,
+  val matchIndexOnPage: Int = 1,
+  val snippet: String = ""
+)
+
 data class SearchState(
   val isOpen: Boolean = false,
   val query: String = "",
   val currentMatchIndex: Int = 0,
   val totalMatches: Int = 0,
+  val matches: List<SearchMatch> = emptyList(),
+  val isSearching: Boolean = false,
   val specialNotice: String? = null
 )
 

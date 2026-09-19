@@ -98,12 +98,13 @@ class PdfViewModelTest {
   }
 
   @Test
-  fun `search query updates results`() {
+  fun `search query updates results`() = runTest(testDispatcher) {
     viewModel.openSearch()
     assertTrue(viewModel.searchState.value.isOpen)
     assertEquals("", viewModel.searchState.value.query)
 
     viewModel.onSearchQueryChange("test")
+    advanceUntilIdle()
     assertEquals("test", viewModel.searchState.value.query)
     assertEquals(1, viewModel.searchState.value.totalMatches)
 
@@ -124,15 +125,59 @@ class PdfViewModelTest {
   }
 
   @Test
-  fun `settings modifications update state`() {
+  fun `settings modifications update state and persist across restart`() = runTest(testDispatcher) {
+    val app = ApplicationProvider.getApplicationContext<Application>()
     viewModel.setTheme(AppThemeSetting.LIGHT)
-    assertEquals(AppThemeSetting.LIGHT, viewModel.themeSetting.value)
-
     viewModel.setFitMode(FitMode.FIT_PAGE)
-    assertEquals(FitMode.FIT_PAGE, viewModel.fitMode.value)
-
     viewModel.setPageSpacing(PageSpacing.COMPACT)
+    viewModel.toggleKeepScreenAwake() // default was true, now false
+
+    assertEquals(AppThemeSetting.LIGHT, viewModel.themeSetting.value)
+    assertEquals(FitMode.FIT_PAGE, viewModel.fitMode.value)
     assertEquals(PageSpacing.COMPACT, viewModel.pageSpacing.value)
+    assertFalse(viewModel.keepScreenAwake.value)
+
+    // Simulate app restart with new ViewModel
+    val newVm = PdfViewModel(app, testDispatcher)
+    assertEquals(AppThemeSetting.LIGHT, newVm.themeSetting.value)
+    assertEquals(FitMode.FIT_PAGE, newVm.fitMode.value)
+    assertEquals(PageSpacing.COMPACT, newVm.pageSpacing.value)
+    assertFalse(newVm.keepScreenAwake.value)
+  }
+
+  @Test
+  fun `navigating back from settings returns to home when opened from home`() = runTest(testDispatcher) {
+    // 1. Open a PDF
+    viewModel.onUrlChange("https://example.com/sample.pdf")
+    viewModel.attemptOpenPdf()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
+
+    // 2. Navigate back to Home (closing the PDF view)
+    viewModel.navigateBackFromReader()
+    assertEquals(Screen.HOME, viewModel.currentScreen.value)
+
+    // 3. Open Settings from Home screen
+    viewModel.openSettings(Screen.HOME)
+    assertEquals(Screen.SETTINGS, viewModel.currentScreen.value)
+
+    // 4. Click back from Settings - must return to HOME, not READER
+    viewModel.navigateBackFromSettings()
+    assertEquals(Screen.HOME, viewModel.currentScreen.value)
+  }
+
+  @Test
+  fun `navigating back from settings returns to reader when opened from reader`() = runTest(testDispatcher) {
+    viewModel.onUrlChange("https://example.com/sample.pdf")
+    viewModel.attemptOpenPdf()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
+
+    viewModel.openSettings(Screen.READER)
+    assertEquals(Screen.SETTINGS, viewModel.currentScreen.value)
+
+    viewModel.navigateBackFromSettings()
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
   }
 
   @Test
