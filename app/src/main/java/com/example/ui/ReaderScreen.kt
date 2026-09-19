@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
@@ -46,6 +49,8 @@ import androidx.compose.material.icons.filled.NavigateBefore
 import androidx.compose.material.icons.filled.NavigateNext
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -99,6 +104,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.PdfDocument
+import com.example.model.SearchMatch
 import com.example.model.SearchState
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.BrandBlue
@@ -110,6 +116,7 @@ import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import java.net.URLEncoder
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -120,6 +127,8 @@ fun ReaderScreen(
   searchState: SearchState,
   fitMode: FitMode,
   pageSpacing: PageSpacing,
+  zoomInLocked: Boolean = false,
+  zoomOutLocked: Boolean = false,
   onBack: () -> Unit,
   onToggleFullscreen: () -> Unit,
   onOpenSearch: () -> Unit,
@@ -134,7 +143,8 @@ fun ReaderScreen(
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
   onAdjustZoom: (Int) -> Unit = {},
-  getPageBitmap: (suspend (Int) -> Bitmap?)? = null,
+  onOpenTextSelection: (Int) -> Unit = {},
+  getPageBitmap: (suspend (Int, Float) -> Bitmap?)? = null,
   modifier: Modifier = Modifier,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
@@ -144,6 +154,12 @@ fun ReaderScreen(
   // Two-finger pinch to zoom & pan state
   var zoomScale by remember { mutableFloatStateOf(1f) }
   var panOffset by remember { mutableStateOf(Offset.Zero) }
+
+  // Zoom bounds based on locking settings:
+  // By default zoomInLocked=false, zoomOutLocked=false, so default zoom fits to width (1.0f)
+  // and zooming out below fit-width is allowed (down to 0.4f)!
+  val minAllowedZoom = if (zoomOutLocked) 1.0f else 0.4f
+  val maxAllowedZoom = if (zoomInLocked) 1.0f else 4.0f
 
   val resetZoom = {
     zoomScale = 1f
@@ -333,6 +349,18 @@ fun ReaderScreen(
               }
 
               IconButton(
+                onClick = { onOpenTextSelection(document.currentPage) },
+                modifier = Modifier.size(38.dp).testTag("btn_reader_select_text"),
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Description,
+                  contentDescription = "Select / Copy Text",
+                  tint = MaterialTheme.colorScheme.onSurface,
+                  modifier = Modifier.size(20.dp),
+                )
+              }
+
+              IconButton(
                 onClick = onOpenDownloadModal,
                 modifier = Modifier.size(38.dp).testTag("btn_reader_download"),
               ) {
@@ -374,6 +402,20 @@ fun ReaderScreen(
                   expanded = isMenuExpanded,
                   onDismissRequest = { isMenuExpanded = false },
                 ) {
+                  DropdownMenuItem(
+                    text = { Text("Select & Copy Text") },
+                    leadingIcon = {
+                      Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                      )
+                    },
+                    onClick = {
+                      isMenuExpanded = false
+                      onOpenTextSelection(document.currentPage)
+                    },
+                  )
                   DropdownMenuItem(
                     text = { Text("Settings") },
                     leadingIcon = {
@@ -569,10 +611,11 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               detectTapGestures(
                 onDoubleTap = { tapOffset ->
-                  if (zoomScale > 1.05f) {
+                  if (kotlin.math.abs(zoomScale - 1f) > 0.05f) {
                     resetZoom()
-                  } else {
-                    zoomScale = 2.2f
+                  } else if (!zoomInLocked) {
+                    val targetScale = 2.2f.coerceIn(minAllowedZoom, maxAllowedZoom)
+                    zoomScale = targetScale
                     val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
                     val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
                     val maxPanX = (size.width * 1.2f) / 2f
@@ -597,13 +640,14 @@ fun ReaderScreen(
                     val zoomChange = event.calculateZoom()
                     val panChange = event.calculatePan()
 
-                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
-                    if (newScale <= 1.01f) {
+                    val newScale = (zoomScale * zoomChange).coerceIn(minAllowedZoom, maxAllowedZoom)
+                    if (kotlin.math.abs(newScale - 1f) <= 0.02f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
                     } else {
-                      val maxPanX = (size.width * (newScale - 1f)) / 2f
-                      val maxPanY = (size.height * (newScale - 1f)) / 2f
+                      val panExtent = kotlin.math.max(0f, newScale - 1f)
+                      val maxPanX = (size.width * panExtent) / 2f
+                      val maxPanY = (size.height * panExtent) / 2f
                       val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
                       val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
                       zoomScale = newScale
@@ -666,9 +710,15 @@ fun ReaderScreen(
                 key = { it }
               ) { index ->
                 val pageNum = index + 1
-                val isMatchedPage = searchState.isOpen && searchState.matches.any { it.page == pageNum }
-                val isCurrentMatchPage = searchState.isOpen &&
-                  searchState.matches.getOrNull(searchState.currentMatchIndex - 1)?.page == pageNum
+                val pageMatches = if (searchState.isOpen) {
+                  searchState.matches.filter { it.page == pageNum }
+                } else emptyList()
+                val isMatchedPage = pageMatches.isNotEmpty()
+                val currentMatch = searchState.matches.getOrNull(searchState.currentMatchIndex - 1)
+                val isCurrentMatchPage = searchState.isOpen && currentMatch?.page == pageNum
+                val currentMatchIndexOnPage = if (isCurrentMatchPage && currentMatch != null) {
+                  currentMatch.matchIndexOnPage
+                } else null
 
                 PdfPageCard(
                   pageNumber = pageNum,
@@ -676,9 +726,13 @@ fun ReaderScreen(
                   preloadedBitmap = document.pageBitmaps.getOrNull(index),
                   getPageBitmap = getPageBitmap,
                   pageIndex = index,
+                  zoomScale = zoomScale,
                   fitMode = fitMode,
                   isMatchedPage = isMatchedPage,
                   isCurrentMatchPage = isCurrentMatchPage,
+                  currentMatchIndexOnPage = currentMatchIndexOnPage,
+                  pageMatches = pageMatches,
+                  onOpenTextSelection = onOpenTextSelection,
                 )
               }
             }
@@ -757,8 +811,8 @@ fun ReaderScreen(
           }
         }
 
-        // Floating Reset Zoom Pill at Top Right when zoomed in
-        if (zoomScale > 1.05f) {
+        // Floating Reset Zoom Pill at Top Right when zoomed in or out from fit-to-width
+        if (kotlin.math.abs(zoomScale - 1f) > 0.03f) {
           Surface(
             onClick = resetZoom,
             shape = RoundedCornerShape(50.dp),
@@ -784,7 +838,7 @@ fun ReaderScreen(
                   ),
               )
               Text(
-                text = "Tap to reset",
+                text = "Fit Width",
                 style =
                   MaterialTheme.typography.labelSmall.copy(
                     color = Color.White.copy(alpha = 0.85f),
@@ -854,8 +908,29 @@ fun ReaderScreen(
         Row(
           modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+          // Zoom Out Button
+          IconButton(
+            onClick = {
+              val target = (zoomScale - 0.25f).coerceIn(minAllowedZoom, maxAllowedZoom)
+              zoomScale = target
+              if (kotlin.math.abs(target - 1f) <= 0.02f) {
+                zoomScale = 1f
+                panOffset = Offset.Zero
+              }
+            },
+            enabled = zoomScale > minAllowedZoom,
+            modifier = Modifier.size(32.dp).testTag("btn_zoom_out"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.ZoomOut,
+              contentDescription = "Zoom Out",
+              tint = if (zoomScale > minAllowedZoom) Color.White else Color.White.copy(alpha = 0.35f),
+              modifier = Modifier.size(18.dp),
+            )
+          }
+
           // Previous Page Button
           IconButton(
             onClick = { navigateToPageDelta(-1) },
@@ -924,6 +999,23 @@ fun ReaderScreen(
               modifier = Modifier.size(16.dp),
             )
           }
+
+          // Zoom In Button
+          IconButton(
+            onClick = {
+              val target = (zoomScale + 0.25f).coerceIn(minAllowedZoom, maxAllowedZoom)
+              zoomScale = target
+            },
+            enabled = zoomScale < maxAllowedZoom,
+            modifier = Modifier.size(32.dp).testTag("btn_zoom_in"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.ZoomIn,
+              contentDescription = "Zoom In",
+              tint = if (zoomScale < maxAllowedZoom) Color.White else Color.White.copy(alpha = 0.35f),
+              modifier = Modifier.size(18.dp),
+            )
+          }
         }
       }
     }
@@ -935,25 +1027,44 @@ fun PdfPageCard(
   pageNumber: Int,
   totalPages: Int,
   preloadedBitmap: Bitmap?,
-  getPageBitmap: (suspend (Int) -> Bitmap?)?,
+  getPageBitmap: (suspend (Int, Float) -> Bitmap?)?,
   pageIndex: Int,
+  zoomScale: Float = 1f,
   fitMode: FitMode,
   isMatchedPage: Boolean,
   isCurrentMatchPage: Boolean,
+  currentMatchIndexOnPage: Int? = null,
+  pageMatches: List<SearchMatch> = emptyList(),
+  onOpenTextSelection: (Int) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
   var isLoading by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
 
+  // Initial / base page loading
   LaunchedEffect(pageIndex, preloadedBitmap) {
     if (preloadedBitmap != null) {
       bitmap = preloadedBitmap
       isLoading = false
     } else if (getPageBitmap != null) {
       isLoading = true
-      val loaded = getPageBitmap(pageIndex)
+      val loaded = getPageBitmap(pageIndex, 1.0f)
       bitmap = loaded
       isLoading = false
+    }
+  }
+
+  // High-res re-rendering on zoom (Chrome-like behavior):
+  // When user zooms in (scale >= 1.35f), re-render at higher DPI directly from vector curves with a debounce
+  LaunchedEffect(pageIndex, zoomScale) {
+    if (getPageBitmap != null && zoomScale >= 1.35f) {
+      delay(250)
+      val sharp = getPageBitmap(pageIndex, zoomScale)
+      if (sharp != null) {
+        bitmap = sharp
+      }
+    } else if (zoomScale <= 1.1f && preloadedBitmap != null) {
+      bitmap = preloadedBitmap
     }
   }
 
@@ -980,12 +1091,48 @@ fun PdfPageCard(
       contentAlignment = Alignment.Center
     ) {
       if (bitmap != null) {
-        Image(
-          bitmap = bitmap!!.asImageBitmap(),
-          contentDescription = "Page $pageNumber of $totalPages",
-          modifier = Modifier.fillMaxWidth(),
-          contentScale = ContentScale.FillWidth,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+          Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "Page $pageNumber of $totalPages",
+            modifier = Modifier.fillMaxWidth(),
+            contentScale = ContentScale.FillWidth,
+          )
+
+          // Search matches highlighting overlay
+          if (pageMatches.isNotEmpty()) {
+            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
+              val cardWidth = maxWidth
+              val cardHeight = maxHeight
+
+              pageMatches.forEachIndexed { matchIdx, match ->
+                val isThisActive = isCurrentMatchPage && (matchIdx + 1 == currentMatchIndexOnPage)
+                match.bounds.forEach { rect ->
+                  val leftDp = cardWidth * rect.left
+                  val topDp = cardHeight * rect.top
+                  val widthDp = (cardWidth * (rect.right - rect.left)).coerceAtLeast(8.dp)
+                  val heightDp = (cardHeight * (rect.bottom - rect.top)).coerceAtLeast(14.dp)
+
+                  Box(
+                    modifier = Modifier
+                      .offset(x = leftDp, y = topDp)
+                      .size(width = widthDp, height = heightDp)
+                      .clip(RoundedCornerShape(3.dp))
+                      .background(
+                        if (isThisActive) Color(0xFFFF9800).copy(alpha = 0.65f)
+                        else Color(0xFFFFEB3B).copy(alpha = 0.45f)
+                      )
+                      .border(
+                        width = if (isThisActive) 1.5.dp else 0.5.dp,
+                        color = if (isThisActive) Color(0xFFE65100) else Color(0xFFFBC02D),
+                        shape = RoundedCornerShape(3.dp)
+                      )
+                  )
+                }
+              }
+            }
+          }
+        }
       } else {
         // Clean placeholder while page renders
         Column(
@@ -1009,6 +1156,39 @@ fun PdfPageCard(
               color = Slate700,
               fontWeight = FontWeight.SemiBold
             )
+          )
+        }
+      }
+
+      // Quick "Copy Text" button at bottom-left of card
+      Surface(
+        onClick = { onOpenTextSelection(pageNumber) },
+        shape = RoundedCornerShape(8.dp),
+        color = Slate900.copy(alpha = 0.8f),
+        contentColor = Color.White,
+        modifier = Modifier
+          .align(Alignment.BottomStart)
+          .padding(8.dp)
+          .testTag("btn_copy_text_page_$pageNumber"),
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.ContentCopy,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(11.dp),
+          )
+          Text(
+            text = "Copy Text",
+            style = MaterialTheme.typography.labelSmall.copy(
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Medium,
+              color = Color.White,
+            ),
           )
         }
       }

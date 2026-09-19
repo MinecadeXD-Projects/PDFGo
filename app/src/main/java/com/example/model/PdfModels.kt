@@ -41,10 +41,25 @@ data class PdfDocument(
   val loadError: String? = null
 )
 
+data class NormalizedRect(
+  val left: Float,
+  val top: Float,
+  val right: Float,
+  val bottom: Float
+)
+
 data class SearchMatch(
   val page: Int,
   val matchIndexOnPage: Int = 1,
-  val snippet: String = ""
+  val snippet: String = "",
+  val bounds: List<NormalizedRect> = emptyList()
+)
+
+data class TextSelectionState(
+  val isOpen: Boolean = false,
+  val page: Int = 1,
+  val text: String = "",
+  val isLoading: Boolean = false
 )
 
 data class SearchState(

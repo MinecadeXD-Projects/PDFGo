@@ -566,3 +566,163 @@ fun PasswordProtectedDialog(
     }
   }
 }
+
+@Composable
+fun TextSelectionDialog(
+  state: com.example.model.TextSelectionState,
+  onDismiss: () -> Unit,
+  onCopy: (String) -> Unit,
+) {
+  if (!state.isOpen) return
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(20.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 8.dp,
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    ) {
+      Column(
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Page ${state.page} Text",
+              style =
+                MaterialTheme.typography.titleMedium.copy(
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+            Text(
+              text = "Select text with long press or copy to clipboard",
+              style =
+                MaterialTheme.typography.bodySmall.copy(
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  fontSize = 11.sp,
+                ),
+            )
+          }
+        }
+
+        if (state.isLoading) {
+          Box(
+            modifier = Modifier.fillMaxWidth().height(140.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(32.dp),
+                color = BrandBlue,
+                strokeWidth = 3.dp,
+              )
+              Text(
+                text = "Extracting text from page...",
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+              )
+            }
+          }
+        } else if (state.text.isBlank()) {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(140.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(16.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "No extractable text found on page ${state.page}.\n(This page might be an image or scanned document)",
+              style = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+              ),
+              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+          }
+        } else {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(260.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                .border(
+                  1.dp,
+                  MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                  RoundedCornerShape(12.dp),
+                )
+                .padding(12.dp),
+          ) {
+            androidx.compose.foundation.text.selection.SelectionContainer {
+              androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                item {
+                  Text(
+                    text = state.text,
+                    style =
+                      MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 20.sp,
+                        fontSize = 13.sp,
+                      ),
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          TextButton(
+            onClick = onDismiss,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.testTag("btn_close_text_selection"),
+          ) {
+            Text("Close")
+          }
+          if (!state.isLoading && state.text.isNotBlank()) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+              modifier =
+                Modifier.shadow(4.dp, RoundedCornerShape(10.dp), spotColor = BrandBlue)
+                  .clip(RoundedCornerShape(10.dp))
+                  .background(PrimaryGradient)
+                  .clickable {
+                    onCopy(state.text)
+                    onDismiss()
+                  }
+                  .padding(horizontal = 16.dp, vertical = 9.dp)
+                  .testTag("btn_copy_page_text"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "Copy Page Text",
+                style =
+                  MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                  ),
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+}

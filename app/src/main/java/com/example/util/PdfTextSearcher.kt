@@ -2,6 +2,7 @@ package com.example.util
 
 import android.graphics.pdf.PdfRenderer
 import android.os.Build
+import com.example.model.NormalizedRect
 import com.example.model.SearchMatch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -14,8 +15,8 @@ object PdfTextSearcher {
 
   /**
    * Searches for [query] in the PDF file across all pages up to [totalPages].
-   * Uses Android 15's native searchText if available, with a fast and robust
-   * pure-Kotlin PDF content stream extractor fallback for earlier Android versions.
+   * Uses Android 15's native searchText if available (with exact bounding boxes),
+   * with a fast and robust pure-Kotlin PDF content stream extractor fallback for earlier Android versions.
    */
   fun search(
     file: File?,
@@ -26,8 +27,6 @@ object PdfTextSearcher {
   ): List<SearchMatch> {
     val trimmed = query.trim()
     if (trimmed.isEmpty() || totalPages <= 0) return emptyList()
-
-    val results = mutableListOf<SearchMatch>()
 
     // 1. Try Android 15+ (API 35+) native PdfRenderer.Page.searchText
     if (Build.VERSION.SDK_INT >= 35 && renderer != null) {
@@ -43,8 +42,26 @@ object PdfTextSearcher {
               try {
                 val matches = page.searchText(trimmed)
                 if (matches.isNotEmpty()) {
-                  for (m in 1..matches.size) {
-                    nativeMatches.add(SearchMatch(page = pageIdx + 1, matchIndexOnPage = m))
+                  for ((mIdx, matchObj) in matches.withIndex()) {
+                    val boundsList = try {
+                      matchObj.bounds.map { r ->
+                        NormalizedRect(
+                          left = (r.left / page.width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                          top = (r.top / page.height.coerceAtLeast(1)).coerceIn(0f, 1f),
+                          right = (r.right / page.width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                          bottom = (r.bottom / page.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                        )
+                      }
+                    } catch (_: Throwable) {
+                      emptyList()
+                    }
+                    nativeMatches.add(
+                      SearchMatch(
+                        page = pageIdx + 1,
+                        matchIndexOnPage = mIdx + 1,
+                        bounds = boundsList
+                      )
+                    )
                   }
                 }
                 nativeSuccess = true
@@ -52,7 +69,7 @@ object PdfTextSearcher {
                 page.close()
               }
             } catch (_: Throwable) {
-              // If searchText throws or is not implemented on this runtime, break to fallback
+              // If searchText throws or is not supported on this runtime, break to fallback
               nativeSuccess = false
               break
             }
@@ -79,11 +96,60 @@ object PdfTextSearcher {
       }
     }
 
-    return results
+    return emptyList()
   }
 
   /**
-   * Scans PDF page content streams and extracts text strings between BT and ET.
+   * Extracts readable text for a specific page (1-based index) for text selection and copying.
+   */
+  fun extractPageText(
+    file: File?,
+    pageIndex: Int,
+    totalPages: Int,
+    renderer: PdfRenderer? = null,
+    rendererLock: Any? = null
+  ): String {
+    // 1. Try Android 15+ native textContents
+    if (Build.VERSION.SDK_INT >= 35 && renderer != null) {
+      try {
+        val lock = rendererLock ?: renderer
+        synchronized(lock) {
+          if (pageIndex in 0 until totalPages) {
+            val page = renderer.openPage(pageIndex)
+            try {
+              val contents = page.textContents
+              if (contents.isNotEmpty()) {
+                val sb = StringBuilder()
+                for (c in contents) {
+                  val text = c.text
+                  if (text.isNotBlank()) {
+                    sb.append(text).append("\n")
+                  }
+                }
+                val result = sb.toString().trim()
+                if (result.isNotBlank()) return result
+              }
+            } finally {
+              page.close()
+            }
+          }
+        }
+      } catch (_: Throwable) {}
+    }
+
+    // 2. Fallback: Parse text from the PDF file's page stream
+    if (file != null && file.exists() && file.length() > 0) {
+      try {
+        val text = extractPageTextFromStream(file, pageIndex, totalPages)
+        if (text.isNotBlank()) return text
+      } catch (_: Throwable) {}
+    }
+
+    return "Page ${pageIndex + 1}\n\n(No selectable text could be extracted from this page. This may be an image-only or scanned PDF.)"
+  }
+
+  /**
+   * Scans PDF page content streams and extracts text strings with positional bounds.
    */
   private fun extractAndSearchStreams(file: File, query: String, totalPages: Int): List<SearchMatch> {
     val matches = mutableListOf<SearchMatch>()
@@ -91,16 +157,12 @@ object PdfTextSearcher {
 
     RandomAccessFile(file, "r").use { raf ->
       val fileLength = raf.length()
-      // Limit search reading to reasonable buffer for performance
       val maxRead = fileLength.coerceAtMost(64L * 1024 * 1024).toInt()
       val bytes = ByteArray(maxRead)
       raf.seek(0)
       raf.readFully(bytes)
 
       val content = String(bytes, Charsets.ISO_8859_1)
-
-      // Find all page object offsets
-      // Pattern: << ... /Type /Page ... >>
       val pageRegex = Regex("""/Type\s*/Page\b""")
       val pageMatches = pageRegex.findAll(content).toList()
 
@@ -110,12 +172,10 @@ object PdfTextSearcher {
         for (pageIndex in 0 until effectivePages) {
           val pageNum = pageIndex + 1
           val matchPos = pageMatches[pageIndex].range.first
-          // Locate the enclosing object or dictionary around this page match
           val objStart = content.lastIndexOf("obj", matchPos).coerceAtLeast(0)
           val objEnd = content.indexOf("endobj", matchPos).let { if (it == -1) content.length else it + 6 }
           val pageObjSnippet = content.substring(objStart, objEnd)
 
-          // Find /Contents reference: e.g. /Contents 12 0 R or /Contents [ 12 0 R 13 0 R ]
           val contentsRegex = Regex("""/Contents\s*(\d+)\s+\d+\s+R""")
           val contentsArrayRegex = Regex("""/Contents\s*\[([^\]]+)\]""")
 
@@ -134,35 +194,62 @@ object PdfTextSearcher {
           }
 
           val pageTextBuilder = StringBuilder()
-
           for (objId in streamObjIds) {
             val streamText = extractTextFromStreamObject(content, bytes, objId)
             if (streamText.isNotEmpty()) {
-              pageTextBuilder.append(streamText).append(" ")
+              pageTextBuilder.append(streamText).append("\n")
             }
           }
 
-          val pageText = pageTextBuilder.toString().lowercase()
+          val rawPageText = pageTextBuilder.toString()
+          val pageTextLower = rawPageText.lowercase()
+          val lines = rawPageText.lines()
+          val totalLines = lines.size.coerceAtLeast(1)
+
           var count = 0
           var searchIdx = 0
-          while (searchIdx < pageText.length) {
-            val found = pageText.indexOf(queryLower, searchIdx)
+          while (searchIdx < pageTextLower.length) {
+            val found = pageTextLower.indexOf(queryLower, searchIdx)
             if (found >= 0) {
               count++
+              // Compute approximate normalized highlight bounds for this match
+              var accumulated = 0
+              var matchLineIdx = 0
+              var matchColIdx = 0
+              for ((lIdx, line) in lines.withIndex()) {
+                if (found in accumulated..(accumulated + line.length)) {
+                  matchLineIdx = lIdx
+                  matchColIdx = (found - accumulated).coerceAtLeast(0)
+                  break
+                }
+                accumulated += line.length + 1
+              }
+
+              val topNorm = (0.06f + (matchLineIdx.toFloat() / totalLines) * 0.86f).coerceIn(0.04f, 0.94f)
+              val bottomNorm = (topNorm + 0.035f).coerceIn(topNorm + 0.01f, 0.98f)
+              val lineLen = lines.getOrNull(matchLineIdx)?.length?.coerceAtLeast(20) ?: 50
+              val leftNorm = (0.05f + (matchColIdx.toFloat() / lineLen) * 0.86f).coerceIn(0.04f, 0.92f)
+              val widthNorm = (query.length.toFloat() / lineLen * 0.86f).coerceIn(0.05f, 0.45f)
+              val rightNorm = (leftNorm + widthNorm).coerceIn(leftNorm + 0.02f, 0.98f)
+
+              val highlight = listOf(NormalizedRect(leftNorm, topNorm, rightNorm, bottomNorm))
+              matches.add(
+                SearchMatch(
+                  page = pageNum,
+                  matchIndexOnPage = count,
+                  bounds = highlight
+                )
+              )
+
               searchIdx = found + queryLower.length.coerceAtLeast(1)
             } else {
               break
             }
           }
-
-          for (m in 1..count) {
-            matches.add(SearchMatch(page = pageNum, matchIndexOnPage = m))
-          }
         }
       }
 
-      // If page-by-page mapping didn't find matches (e.g. non-standard object numbering),
-      // search all decompressed text streams in the document sequentially!
+      // Fallback if structured page mapping was not found
       if (matches.isEmpty()) {
         val streamRegex = Regex("""stream\r?\n""")
         val streamMatchesList = streamRegex.findAll(content).toList()
@@ -184,13 +271,20 @@ object PdfTextSearcher {
                 val f = textLower.indexOf(queryLower, sIdx)
                 if (f >= 0) {
                   count++
+                  val progress = f.toFloat() / textLower.length.coerceAtLeast(1)
+                  val topNorm = (0.08f + progress * 0.82f).coerceIn(0.05f, 0.92f)
+                  val bounds = listOf(NormalizedRect(0.08f, topNorm, 0.55f, topNorm + 0.035f))
+                  matches.add(
+                    SearchMatch(
+                      page = streamPageEst.coerceIn(1, totalPages),
+                      matchIndexOnPage = count,
+                      bounds = bounds
+                    )
+                  )
                   sIdx = f + queryLower.length.coerceAtLeast(1)
                 } else {
                   break
                 }
-              }
-              for (m in 1..count) {
-                matches.add(SearchMatch(page = streamPageEst.coerceIn(1, totalPages), matchIndexOnPage = m))
               }
               if (extracted.isNotBlank() && streamPageEst < totalPages) {
                 streamPageEst++
@@ -202,6 +296,55 @@ object PdfTextSearcher {
     }
 
     return matches
+  }
+
+  private fun extractPageTextFromStream(file: File, pageIndex: Int, totalPages: Int): String {
+    RandomAccessFile(file, "r").use { raf ->
+      val fileLength = raf.length()
+      val maxRead = fileLength.coerceAtMost(64L * 1024 * 1024).toInt()
+      val bytes = ByteArray(maxRead)
+      raf.seek(0)
+      raf.readFully(bytes)
+
+      val content = String(bytes, Charsets.ISO_8859_1)
+      val pageRegex = Regex("""/Type\s*/Page\b""")
+      val pageMatches = pageRegex.findAll(content).toList()
+
+      if (pageIndex in pageMatches.indices) {
+        val matchPos = pageMatches[pageIndex].range.first
+        val objStart = content.lastIndexOf("obj", matchPos).coerceAtLeast(0)
+        val objEnd = content.indexOf("endobj", matchPos).let { if (it == -1) content.length else it + 6 }
+        val pageObjSnippet = content.substring(objStart, objEnd)
+
+        val contentsRegex = Regex("""/Contents\s*(\d+)\s+\d+\s+R""")
+        val contentsArrayRegex = Regex("""/Contents\s*\[([^\]]+)\]""")
+
+        val streamObjIds = mutableListOf<String>()
+        val arrayMatch = contentsArrayRegex.find(pageObjSnippet)
+        if (arrayMatch != null) {
+          val refs = Regex("""(\d+)\s+\d+\s+R""").findAll(arrayMatch.groupValues[1])
+          for (r in refs) {
+            streamObjIds.add(r.groupValues[1])
+          }
+        } else {
+          val singleMatch = contentsRegex.find(pageObjSnippet)
+          if (singleMatch != null) {
+            streamObjIds.add(singleMatch.groupValues[1])
+          }
+        }
+
+        val pageTextBuilder = StringBuilder()
+        for (objId in streamObjIds) {
+          val streamText = extractTextFromStreamObject(content, bytes, objId)
+          if (streamText.isNotEmpty()) {
+            pageTextBuilder.append(streamText).append("\n\n")
+          }
+        }
+        val res = pageTextBuilder.toString().trim()
+        if (res.isNotBlank()) return res
+      }
+    }
+    return ""
   }
 
   private fun extractTextFromStreamObject(content: String, bytes: ByteArray, objId: String): String {

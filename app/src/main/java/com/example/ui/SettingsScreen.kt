@@ -57,12 +57,16 @@ fun SettingsScreen(
   pageSpacing: PageSpacing,
   keepScreenAwake: Boolean,
   saveReadingPosition: Boolean,
+  zoomInLocked: Boolean = false,
+  zoomOutLocked: Boolean = false,
   onBack: () -> Unit,
   onThemeChange: (AppThemeSetting) -> Unit,
   onFitModeChange: (FitMode) -> Unit,
   onPageSpacingChange: (PageSpacing) -> Unit,
   onToggleKeepAwake: () -> Unit,
   onToggleSavePosition: () -> Unit,
+  onToggleZoomInLocked: () -> Unit = {},
+  onToggleZoomOutLocked: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val scrollState = rememberScrollState()
@@ -425,6 +429,112 @@ fun SettingsScreen(
             Switch(
               checked = saveReadingPosition,
               onCheckedChange = { onToggleSavePosition() },
+              colors =
+                SwitchDefaults.colors(
+                  checkedThumbColor = Color.White,
+                  checkedTrackColor = BrandBlue,
+                ),
+            )
+          }
+        }
+      }
+
+      // SECTION: ZOOM & SCALING
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          text = "ZOOM & SCALING",
+          style =
+            MaterialTheme.typography.labelSmall.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 1.2.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontSize = 11.sp,
+            ),
+        )
+
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(16.dp))
+              .background(MaterialTheme.colorScheme.surface)
+              .border(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                RoundedCornerShape(16.dp),
+              ),
+        ) {
+          // Lock Zoom In
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+              Text(
+                text = "Lock Zoom In",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  ),
+              )
+              Text(
+                text = if (zoomInLocked) "Locked: Max zoom locked at 100% (Fit Width)" else "Unlocked: Free pinch zoom in up to 400%",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                  ),
+              )
+            }
+
+            Switch(
+              checked = zoomInLocked,
+              onCheckedChange = { onToggleZoomInLocked() },
+              modifier = Modifier.testTag("switch_lock_zoom_in"),
+              colors =
+                SwitchDefaults.colors(
+                  checkedThumbColor = Color.White,
+                  checkedTrackColor = BrandBlue,
+                ),
+            )
+          }
+
+          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+          // Lock Zoom Out
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+              Text(
+                text = "Lock Zoom Out",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  ),
+              )
+              Text(
+                text = if (zoomOutLocked) "Locked: Min zoom locked at 100% (Fit Width)" else "Unlocked: Allowed to zoom out below fit-to-width (down to 40%)",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                  ),
+              )
+            }
+
+            Switch(
+              checked = zoomOutLocked,
+              onCheckedChange = { onToggleZoomOutLocked() },
+              modifier = Modifier.testTag("switch_lock_zoom_out"),
               colors =
                 SwitchDefaults.colors(
                   checkedThumbColor = Color.White,
