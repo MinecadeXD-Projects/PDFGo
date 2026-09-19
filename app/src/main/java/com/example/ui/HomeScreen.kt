@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
@@ -63,6 +64,7 @@ fun HomeScreen(
   onPaste: (String) -> Unit,
   onOpenPdf: () -> Unit,
   onResumeSaved: () -> Unit = {},
+  onRemovePdf: () -> Unit = {},
   onOpenSettings: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -202,7 +204,12 @@ fun HomeScreen(
 
       // Subtitle
       Text(
-        text = "Paste any direct PDF link to start a focused, distraction-free reading session.",
+        text =
+          if (savedDocument != null) {
+            "An active PDF is loaded in your session. Resume reading where you left off or remove it to load a new PDF."
+          } else {
+            "Paste any direct PDF link to start a focused, distraction-free reading session."
+          },
         style =
           MaterialTheme.typography.bodyMedium.copy(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -210,8 +217,23 @@ fun HomeScreen(
           ),
       )
 
+      Spacer(modifier = Modifier.height(24.dp))
+
       if (savedDocument != null) {
-        Spacer(modifier = Modifier.height(20.dp))
+        // When PDF is active: Hide link input completely, show resume card in its place
+        Text(
+          text = "ACTIVE DOCUMENT",
+          style =
+            MaterialTheme.typography.labelSmall.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 1.2.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontSize = 11.sp,
+            ),
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Card(
           onClick = onResumeSaved,
           shape = RoundedCornerShape(16.dp),
@@ -316,166 +338,202 @@ fun HomeScreen(
             }
           }
         }
-      }
 
-      Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-      // Label
-      Text(
-        text = "DOCUMENT WEB LINK",
-        style =
-          MaterialTheme.typography.labelSmall.copy(
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp,
-          ),
-      )
-
-      Spacer(modifier = Modifier.height(8.dp))
-
-      // URL Input with Link icon and Paste button
-      OutlinedTextField(
-        value = urlInput,
-        onValueChange = onUrlChange,
-        placeholder = {
-          Text(
-            text = "Paste PDF link (e.g., https://.../paper.pdf)",
-            style =
-              MaterialTheme.typography.bodyMedium.copy(
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = 13.sp,
-              ),
-          )
-        },
-        leadingIcon = {
-          Icon(
-            imageVector = Icons.Default.Link,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-          )
-        },
-        trailingIcon = {
-          TextButton(
-            onClick = {
-              val clip = clipboardManager.getText()?.text
-              if (!clip.isNullOrBlank()) {
-                onPaste(clip)
-              } else {
-                onPaste("")
-              }
-            },
-            modifier =
-              Modifier.padding(end = 4.dp)
-                .testTag("btn_paste"),
-            shape = RoundedCornerShape(10.dp),
-          ) {
-            Text(
-              text = "Paste",
-              style =
-                MaterialTheme.typography.labelMedium.copy(
-                  fontWeight = FontWeight.SemiBold,
-                  color = BrandBlue,
-                ),
-            )
-          }
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(16.dp),
-        colors =
-          OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            focusedBorderColor = BrandBlue,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-          ),
-        modifier =
-          Modifier.fillMaxWidth()
-            .testTag("pdf_url_input"),
-      )
-
-      // Invalid URL Error Banner
-      if (urlError != null) {
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
+        // In place of the Open PDF button: Remove PDF button
+        Button(
+          onClick = onRemovePdf,
           modifier =
             Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(14.dp))
-              .background(Rose500.copy(alpha = 0.12f))
-              .border(
-                width = 1.dp,
-                color = Rose500.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(14.dp),
-              )
-              .padding(12.dp),
-          verticalAlignment = Alignment.Top,
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
+              .height(52.dp)
+              .testTag("btn_remove_pdf_home"),
+          shape = RoundedCornerShape(16.dp),
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = Rose500,
+              contentColor = Color.White,
+            ),
+          elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp),
         ) {
-          Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = "Error",
-            tint = Rose500,
-            modifier = Modifier.size(18.dp).padding(top = 2.dp),
-          )
-          Column {
-            Text(
-              text = urlError,
-              style =
-                MaterialTheme.typography.bodySmall.copy(
-                  fontWeight = FontWeight.Bold,
-                  color = Rose500,
-                ),
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.Delete,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
             )
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-              text = "Link must start with http:// or https:// and point to a readable PDF document.",
+              text = "Remove PDF",
               style =
-                MaterialTheme.typography.bodySmall.copy(
-                  color = Rose500.copy(alpha = 0.85f),
-                  fontSize = 11.sp,
+                MaterialTheme.typography.titleMedium.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  fontSize = 15.sp,
                 ),
             )
           }
         }
-      }
+      } else {
+        // When no active PDF: Show URL link input and Open PDF button
+        Text(
+          text = "DOCUMENT WEB LINK",
+          style =
+            MaterialTheme.typography.labelSmall.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 1.2.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontSize = 11.sp,
+            ),
+        )
 
-      Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-      // Primary Button: Open PDF
-      Button(
-        onClick = onOpenPdf,
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(52.dp)
-            .testTag("btn_open_pdf"),
-        shape = RoundedCornerShape(16.dp),
-        colors =
-          ButtonDefaults.buttonColors(
-            containerColor = BrandBlue,
-            contentColor = Color.White,
-          ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.Center,
+        // URL Input with Link icon and Paste button
+        OutlinedTextField(
+          value = urlInput,
+          onValueChange = onUrlChange,
+          placeholder = {
+            Text(
+              text = "Paste PDF link (e.g., https://.../paper.pdf)",
+              style =
+                MaterialTheme.typography.bodyMedium.copy(
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                  fontSize = 13.sp,
+                ),
+            )
+          },
+          leadingIcon = {
+            Icon(
+              imageVector = Icons.Default.Link,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(20.dp),
+            )
+          },
+          trailingIcon = {
+            TextButton(
+              onClick = {
+                val clip = clipboardManager.getText()?.text
+                if (!clip.isNullOrBlank()) {
+                  onPaste(clip)
+                } else {
+                  onPaste("")
+                }
+              },
+              modifier =
+                Modifier.padding(end = 4.dp)
+                  .testTag("btn_paste"),
+              shape = RoundedCornerShape(10.dp),
+            ) {
+              Text(
+                text = "Paste",
+                style =
+                  MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandBlue,
+                  ),
+              )
+            }
+          },
+          singleLine = true,
+          shape = RoundedCornerShape(16.dp),
+          colors =
+            OutlinedTextFieldDefaults.colors(
+              focusedContainerColor = MaterialTheme.colorScheme.surface,
+              unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+              focusedBorderColor = BrandBlue,
+              unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+              focusedTextColor = MaterialTheme.colorScheme.onSurface,
+              unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+            ),
+          modifier =
+            Modifier.fillMaxWidth()
+              .testTag("pdf_url_input"),
+        )
+
+        // Invalid URL Error Banner
+        if (urlError != null) {
+          Spacer(modifier = Modifier.height(12.dp))
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Rose500.copy(alpha = 0.12f))
+                .border(
+                  width = 1.dp,
+                  color = Rose500.copy(alpha = 0.35f),
+                  shape = RoundedCornerShape(14.dp),
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Default.Warning,
+              contentDescription = "Error",
+              tint = Rose500,
+              modifier = Modifier.size(18.dp).padding(top = 2.dp),
+            )
+            Column {
+              Text(
+                text = urlError,
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Rose500,
+                  ),
+              )
+              Text(
+                text = "Link must start with http:// or https:// and point to a readable PDF document.",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    color = Rose500.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                  ),
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Primary Button: Open PDF
+        Button(
+          onClick = onOpenPdf,
+          modifier =
+            Modifier.fillMaxWidth()
+              .height(52.dp)
+              .testTag("btn_open_pdf"),
+          shape = RoundedCornerShape(16.dp),
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = BrandBlue,
+              contentColor = Color.White,
+            ),
+          elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
         ) {
-          Text(
-            text = "Open PDF",
-            style =
-              MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-              ),
-          )
-          Spacer(modifier = Modifier.width(8.dp))
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+          ) {
+            Text(
+              text = "Open PDF",
+              style =
+                MaterialTheme.typography.titleMedium.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  fontSize = 15.sp,
+                ),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+          }
         }
       }
     }

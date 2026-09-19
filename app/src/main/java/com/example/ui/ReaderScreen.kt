@@ -68,6 +68,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -102,6 +103,7 @@ import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import java.net.URLEncoder
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 @Composable
 fun ReaderScreen(
@@ -128,6 +130,7 @@ fun ReaderScreen(
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
   val lazyListState = rememberLazyListState()
+  val coroutineScope = rememberCoroutineScope()
 
   // Two-finger pinch to zoom & pan state
   var zoomScale by remember { mutableFloatStateOf(1f) }
@@ -170,13 +173,19 @@ fun ReaderScreen(
       }
   }
 
-  // Animate scroll when currentPage changes from button controls (Prev/Next)
-  LaunchedEffect(document.currentPage) {
-    if (document.pageBitmaps.isNotEmpty() && !lazyListState.isScrollInProgress) {
-      val targetIndex = (document.currentPage - 1).coerceIn(0, document.pageBitmaps.size - 1)
-      if (lazyListState.firstVisibleItemIndex != targetIndex) {
-        lazyListState.animateScrollToItem(targetIndex)
+  // Helper lambda to scroll by page delta cleanly without overshooting
+  val navigateToPageDelta: (Int) -> Unit = { delta ->
+    if (document.pageBitmaps.isNotEmpty()) {
+      // Determine current index from first visible item or layout info
+      val currentIdx = lazyListState.firstVisibleItemIndex
+      val nextIdx = (currentIdx + delta).coerceIn(0, document.pageBitmaps.size - 1)
+      val targetPage = nextIdx + 1
+      onSetPage(targetPage)
+      coroutineScope.launch {
+        lazyListState.animateScrollToItem(nextIdx)
       }
+    } else {
+      onChangePage(delta)
     }
   }
 
@@ -636,7 +645,7 @@ fun ReaderScreen(
                       .fillMaxWidth()
                       .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp)),
                 ) {
-                  Column {
+                  Box(modifier = Modifier.fillMaxWidth()) {
                     Image(
                       bitmap = bitmap.asImageBitmap(),
                       contentDescription = "Page $pageNum of ${document.totalPages}",
@@ -644,35 +653,46 @@ fun ReaderScreen(
                       contentScale = ContentScale.FillWidth,
                     )
 
-                    // Document Page Footer
-                    Row(
-                      modifier =
-                        Modifier.fillMaxWidth()
-                          .background(Color(0xFFF8FAFC))
-                          .padding(horizontal = 16.dp, vertical = 8.dp),
-                      horizontalArrangement = Arrangement.SpaceBetween,
-                      verticalAlignment = Alignment.CenterVertically,
+                    // Page counter shown directly on the page itself (floating pill top-right)
+                    Surface(
+                      shape = RoundedCornerShape(8.dp),
+                      color = Slate900.copy(alpha = 0.78f),
+                      contentColor = Color.White,
+                      modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
                     ) {
-                      Text(
-                        text = document.title,
-                        style =
-                          MaterialTheme.typography.labelSmall.copy(
-                            color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                          ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(end = 8.dp),
-                      )
-                      Text(
-                        text = "Page $pageNum of ${document.totalPages}",
-                        style =
-                          MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                          ),
-                      )
+                      Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                      ) {
+                        Text(
+                          text = "$pageNum",
+                          style =
+                            MaterialTheme.typography.labelSmall.copy(
+                              fontFamily = FontFamily.Monospace,
+                              fontWeight = FontWeight.Bold,
+                              fontSize = 11.sp,
+                              color = Color.White,
+                            ),
+                        )
+                        Text(
+                          text = "/",
+                          style =
+                            MaterialTheme.typography.labelSmall.copy(
+                              fontSize = 10.sp,
+                              color = Color.White.copy(alpha = 0.55f),
+                            ),
+                        )
+                        Text(
+                          text = "${document.totalPages}",
+                          style =
+                            MaterialTheme.typography.labelSmall.copy(
+                              fontFamily = FontFamily.Monospace,
+                              fontSize = 10.sp,
+                              color = Color.White.copy(alpha = 0.8f),
+                            ),
+                        )
+                      }
                     }
                   }
                 }
@@ -852,13 +872,14 @@ fun ReaderScreen(
         ) {
           // Previous Page Button
           IconButton(
-            onClick = { onChangePage(-1) },
+            onClick = { navigateToPageDelta(-1) },
+            enabled = document.currentPage > 1,
             modifier = Modifier.size(32.dp).testTag("btn_page_prev"),
           ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowBack,
               contentDescription = "Previous Page",
-              tint = Color.White,
+              tint = if (document.currentPage > 1) Color.White else Color.White.copy(alpha = 0.35f),
               modifier = Modifier.size(16.dp),
             )
           }
@@ -906,7 +927,7 @@ fun ReaderScreen(
 
           // Next Page Button
           IconButton(
-            onClick = { onChangePage(1) },
+            onClick = { navigateToPageDelta(1) },
             enabled = document.currentPage < document.totalPages,
             modifier = Modifier.size(32.dp).testTag("btn_page_next"),
           ) {

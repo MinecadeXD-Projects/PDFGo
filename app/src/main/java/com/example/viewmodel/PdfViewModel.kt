@@ -602,7 +602,7 @@ class PdfViewModel(
 
   fun executeRemovePdf() {
     _isRemoveModalOpen.value = false
-    val currentUrl = _activeDocument.value?.url
+    val currentUrl = _activeDocument.value?.url ?: _savedDocumentStatus.value?.url
     if (currentUrl != null) {
       sharedPreferences?.edit()
         ?.remove("page_$currentUrl")

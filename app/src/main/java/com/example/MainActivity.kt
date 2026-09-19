@@ -126,6 +126,7 @@ fun PdfGoApp(
               onPaste = { viewModel.pasteUrl(it) },
               onOpenPdf = { viewModel.attemptOpenPdf() },
               onResumeSaved = { viewModel.resumeSavedDocument() },
+              onRemovePdf = { viewModel.openRemovePdfModal() },
               onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
             )
           }
@@ -169,6 +170,7 @@ fun PdfGoApp(
                 onPaste = { viewModel.pasteUrl(it) },
                 onOpenPdf = { viewModel.attemptOpenPdf() },
                 onResumeSaved = { viewModel.resumeSavedDocument() },
+                onRemovePdf = { viewModel.openRemovePdfModal() },
                 onOpenSettings = { viewModel.navigateTo(Screen.SETTINGS) },
               )
             }
