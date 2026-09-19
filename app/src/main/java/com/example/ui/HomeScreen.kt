@@ -247,7 +247,7 @@ fun HomeScreen(
               if (!clip.isNullOrBlank()) {
                 onPaste(clip)
               } else {
-                onPaste("https://arxiv.org/pdf/2402.quantum_mechanics.pdf")
+                onPaste("")
               }
             },
             modifier =

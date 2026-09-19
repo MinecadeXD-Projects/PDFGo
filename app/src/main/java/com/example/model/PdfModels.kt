@@ -1,5 +1,6 @@
 package com.example.model
 
+import android.graphics.Bitmap
 import com.example.ui.theme.AppThemeSetting
 
 enum class Screen {
@@ -23,9 +24,13 @@ enum class PageSpacing(val label: String, val dpValue: Int) {
 data class PdfDocument(
   val url: String,
   val title: String,
-  val totalPages: Int = 84,
-  val currentPage: Int = 12,
-  val zoomPercent: Int = 100
+  val localFilePath: String? = null,
+  val totalPages: Int = 1,
+  val currentPage: Int = 1,
+  val zoomPercent: Int = 100,
+  val pageBitmaps: List<Bitmap> = emptyList(),
+  val useWebViewFallback: Boolean = false,
+  val loadError: String? = null
 )
 
 data class SearchState(

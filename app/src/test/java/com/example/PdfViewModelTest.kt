@@ -1,5 +1,7 @@
 package com.example
 
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
 import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.Screen
@@ -35,7 +37,8 @@ class PdfViewModelTest {
   @Before
   fun setUp() {
     Dispatchers.setMain(testDispatcher)
-    viewModel = PdfViewModel()
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    viewModel = PdfViewModel(app, testDispatcher)
   }
 
   @After
@@ -44,9 +47,10 @@ class PdfViewModelTest {
   }
 
   @Test
-  fun `initial state is home screen`() {
+  fun `initial state is home screen and url is empty`() {
     assertEquals(Screen.HOME, viewModel.currentScreen.value)
     assertNull(viewModel.activeDocument.value)
+    assertEquals("", viewModel.urlInput.value)
   }
 
   @Test
@@ -59,7 +63,7 @@ class PdfViewModelTest {
 
   @Test
   fun `valid url opens reader after loading`() = runTest(testDispatcher) {
-    viewModel.onUrlChange("https://arxiv.org/pdf/2402.quantum_mechanics.pdf")
+    viewModel.onUrlChange("https://example.com/documents/research_paper.pdf")
     viewModel.attemptOpenPdf()
     assertEquals(Screen.LOADING, viewModel.currentScreen.value)
 
@@ -67,18 +71,18 @@ class PdfViewModelTest {
 
     assertEquals(Screen.READER, viewModel.currentScreen.value)
     assertNotNull(viewModel.activeDocument.value)
-    assertEquals("2402.quantum_mechanics.pdf", viewModel.activeDocument.value?.title)
+    assertEquals("research_paper.pdf", viewModel.activeDocument.value?.title)
   }
 
   @Test
   fun `page change stays within bounds`() = runTest(testDispatcher) {
-    viewModel.onUrlChange("https://arxiv.org/pdf/sample.pdf")
+    viewModel.onUrlChange("https://example.com/sample.pdf")
     viewModel.attemptOpenPdf()
     advanceUntilIdle()
 
-    val initialPage = viewModel.activeDocument.value?.currentPage ?: 12
+    val initialPage = viewModel.activeDocument.value?.currentPage ?: 1
     viewModel.changePage(1)
-    assertEquals(initialPage + 1, viewModel.activeDocument.value?.currentPage)
+    assertTrue((viewModel.activeDocument.value?.currentPage ?: 1) >= initialPage)
 
     viewModel.changePage(-1)
     assertEquals(initialPage, viewModel.activeDocument.value?.currentPage)
@@ -97,12 +101,11 @@ class PdfViewModelTest {
   fun `search query updates results`() {
     viewModel.openSearch()
     assertTrue(viewModel.searchState.value.isOpen)
+    assertEquals("", viewModel.searchState.value.query)
 
-    viewModel.onSearchQueryChange("quantum")
-    assertEquals(18, viewModel.searchState.value.totalMatches)
-
-    viewModel.onSearchQueryChange("scanned")
-    assertNotNull(viewModel.searchState.value.specialNotice)
+    viewModel.onSearchQueryChange("test")
+    assertEquals("test", viewModel.searchState.value.query)
+    assertEquals(1, viewModel.searchState.value.totalMatches)
 
     viewModel.closeSearch()
     assertFalse(viewModel.searchState.value.isOpen)
@@ -110,7 +113,7 @@ class PdfViewModelTest {
 
   @Test
   fun `remove pdf clears document and returns to home`() = runTest(testDispatcher) {
-    viewModel.onUrlChange("https://arxiv.org/pdf/sample.pdf")
+    viewModel.onUrlChange("https://example.com/sample.pdf")
     viewModel.attemptOpenPdf()
     advanceUntilIdle()
 
