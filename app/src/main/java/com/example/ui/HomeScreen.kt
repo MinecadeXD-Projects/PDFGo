@@ -1,7 +1,9 @@
 package com.example.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,9 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,7 +58,14 @@ import androidx.compose.ui.unit.sp
 import com.example.model.SavedDocumentStatus
 import com.example.ui.theme.BrandBlue
 import com.example.ui.theme.BrandBlueLight
+import com.example.ui.theme.BrandCyan
+import com.example.ui.theme.BrandIndigo
+import com.example.ui.theme.CardBorderGradient
+import com.example.ui.theme.DangerGradient
 import com.example.ui.theme.Emerald400
+import com.example.ui.theme.HeroBadgeGradient
+import com.example.ui.theme.HeroTextGradient
+import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
 
 @Composable
@@ -96,9 +109,9 @@ fun HomeScreen(
           Box(
             modifier =
               Modifier.size(36.dp)
+                .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp), spotColor = BrandBlue)
                 .clip(RoundedCornerShape(12.dp))
-                .background(BrandBlue)
-                .shadow(elevation = 4.dp, shape = RoundedCornerShape(12.dp)),
+                .background(PrimaryGradient),
             contentAlignment = Alignment.Center,
           ) {
             Icon(
@@ -147,10 +160,10 @@ fun HomeScreen(
       Row(
         modifier =
           Modifier.clip(RoundedCornerShape(50.dp))
-            .background(BrandBlue.copy(alpha = 0.12f))
+            .background(HeroBadgeGradient)
             .border(
               width = 1.dp,
-              color = BrandBlue.copy(alpha = 0.25f),
+              brush = Brush.horizontalGradient(listOf(BrandBlue.copy(alpha = 0.35f), BrandIndigo.copy(alpha = 0.3f))),
               shape = RoundedCornerShape(50.dp),
             )
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -161,14 +174,14 @@ fun HomeScreen(
           modifier =
             Modifier.size(6.dp)
               .clip(CircleShape)
-              .background(BrandBlue)
+              .background(PrimaryGradient)
         )
         Text(
           text = "One active document at a time",
           style =
             MaterialTheme.typography.labelMedium.copy(
               color = BrandBlue,
-              fontWeight = FontWeight.Medium,
+              fontWeight = FontWeight.SemiBold,
               fontSize = 12.sp,
             ),
         )
@@ -191,12 +204,12 @@ fun HomeScreen(
       Text(
         text = "Move on.",
         style =
-          MaterialTheme.typography.headlineLarge.copy(
+          TextStyle(
+            brush = HeroTextGradient,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = (-1).sp,
             fontSize = 36.sp,
             lineHeight = 42.sp,
-            color = BrandBlue,
           ),
       )
 
@@ -244,7 +257,7 @@ fun HomeScreen(
           elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
           modifier =
             Modifier.fillMaxWidth()
-              .border(1.dp, BrandBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+              .border(1.2.dp, CardBorderGradient, RoundedCornerShape(16.dp))
               .testTag("card_resume_pdf"),
         ) {
           Row(
@@ -259,17 +272,27 @@ fun HomeScreen(
             ) {
               Box(
                 modifier =
-                  Modifier.size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(BrandBlue.copy(alpha = 0.12f)),
+                  Modifier.size(width = 38.dp, height = 50.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Brush.horizontalGradient(listOf(BrandBlue.copy(alpha = 0.16f), BrandIndigo.copy(alpha = 0.12f))))
+                    .border(1.dp, BrandBlue.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
               ) {
-                Icon(
-                  imageVector = Icons.Default.Description,
-                  contentDescription = null,
-                  tint = BrandBlue,
-                  modifier = Modifier.size(22.dp),
-                )
+                if (savedDocument.thumbnailBitmap != null) {
+                  Image(
+                    bitmap = savedDocument.thumbnailBitmap.asImageBitmap(),
+                    contentDescription = "Page 1 Thumbnail",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                  )
+                } else {
+                  Icon(
+                    imageVector = Icons.Default.Description,
+                    contentDescription = null,
+                    tint = BrandBlue,
+                    modifier = Modifier.size(22.dp),
+                  )
+                }
               }
               Column {
                 Row(
@@ -316,16 +339,15 @@ fun HomeScreen(
               }
             }
 
-            Button(
-              onClick = onResumeSaved,
-              shape = RoundedCornerShape(12.dp),
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = BrandBlue,
-                  contentColor = Color.White,
-                ),
-              contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.testTag("btn_resume_pdf"),
+            Box(
+              modifier =
+                Modifier.shadow(4.dp, RoundedCornerShape(12.dp), spotColor = BrandBlue)
+                  .clip(RoundedCornerShape(12.dp))
+                  .background(PrimaryGradient)
+                  .clickable { onResumeSaved() }
+                  .padding(horizontal = 16.dp, vertical = 10.dp)
+                  .testTag("btn_resume_pdf"),
+              contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = "Resume",
@@ -333,6 +355,7 @@ fun HomeScreen(
                   MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
+                    color = Color.White,
                   ),
               )
             }
@@ -342,19 +365,16 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // In place of the Open PDF button: Remove PDF button
-        Button(
-          onClick = onRemovePdf,
+        Box(
           modifier =
             Modifier.fillMaxWidth()
               .height(52.dp)
+              .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp), spotColor = Rose500.copy(alpha = 0.5f))
+              .clip(RoundedCornerShape(16.dp))
+              .background(DangerGradient)
+              .clickable { onRemovePdf() }
               .testTag("btn_remove_pdf_home"),
-          shape = RoundedCornerShape(16.dp),
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = Rose500,
-              contentColor = Color.White,
-            ),
-          elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp),
+          contentAlignment = Alignment.Center,
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -363,6 +383,7 @@ fun HomeScreen(
             Icon(
               imageVector = Icons.Default.Delete,
               contentDescription = null,
+              tint = Color.White,
               modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -372,6 +393,7 @@ fun HomeScreen(
                 MaterialTheme.typography.titleMedium.copy(
                   fontWeight = FontWeight.SemiBold,
                   fontSize = 15.sp,
+                  color = Color.White,
                 ),
             )
           }
@@ -501,19 +523,16 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // Primary Button: Open PDF
-        Button(
-          onClick = onOpenPdf,
+        Box(
           modifier =
             Modifier.fillMaxWidth()
               .height(52.dp)
+              .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp), spotColor = BrandBlue.copy(alpha = 0.5f))
+              .clip(RoundedCornerShape(16.dp))
+              .background(PrimaryGradient)
+              .clickable { onOpenPdf() }
               .testTag("btn_open_pdf"),
-          shape = RoundedCornerShape(16.dp),
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = BrandBlue,
-              contentColor = Color.White,
-            ),
-          elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+          contentAlignment = Alignment.Center,
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -525,12 +544,14 @@ fun HomeScreen(
                 MaterialTheme.typography.titleMedium.copy(
                   fontWeight = FontWeight.SemiBold,
                   fontSize = 15.sp,
+                  color = Color.White,
                 ),
             )
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowForward,
               contentDescription = null,
+              tint = Color.White,
               modifier = Modifier.size(18.dp),
             )
           }

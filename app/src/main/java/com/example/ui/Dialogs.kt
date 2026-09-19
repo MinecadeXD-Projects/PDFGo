@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -49,7 +51,9 @@ import androidx.compose.ui.window.Dialog
 import com.example.model.DownloadModalState
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.BrandBlue
+import com.example.ui.theme.DangerGradient
 import com.example.ui.theme.Emerald500
+import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
 
 @Composable
@@ -237,16 +241,24 @@ fun DownloadPdfDialog(
               Text("Cancel")
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Button(
-              onClick = onStartDownload,
-              shape = RoundedCornerShape(10.dp),
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = BrandBlue,
-                ),
-              modifier = Modifier.testTag("btn_confirm_download"),
+            Box(
+              modifier =
+                Modifier.shadow(4.dp, RoundedCornerShape(10.dp), spotColor = BrandBlue)
+                  .clip(RoundedCornerShape(10.dp))
+                  .background(PrimaryGradient)
+                  .clickable { onStartDownload() }
+                  .padding(horizontal = 16.dp, vertical = 9.dp)
+                  .testTag("btn_confirm_download"),
+              contentAlignment = Alignment.Center,
             ) {
-              Text("Download")
+              Text(
+                text = "Download",
+                style =
+                  MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                  ),
+              )
             }
           }
         }
@@ -329,17 +341,24 @@ fun RemovePdfDialog(
             Text("Cancel")
           }
           Spacer(modifier = Modifier.width(8.dp))
-          Button(
-            onClick = onConfirm,
-            shape = RoundedCornerShape(10.dp),
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Rose500,
-                contentColor = Color.White,
-              ),
-            modifier = Modifier.testTag("btn_confirm_remove"),
+          Box(
+            modifier =
+              Modifier.shadow(4.dp, RoundedCornerShape(10.dp), spotColor = Rose500)
+                .clip(RoundedCornerShape(10.dp))
+                .background(DangerGradient)
+                .clickable { onConfirm() }
+                .padding(horizontal = 16.dp, vertical = 9.dp)
+                .testTag("btn_confirm_remove"),
+            contentAlignment = Alignment.Center,
           ) {
-            Text("Remove")
+            Text(
+              text = "Remove",
+              style =
+                MaterialTheme.typography.labelLarge.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  color = Color.White,
+                ),
+            )
           }
         }
       }
@@ -523,17 +542,24 @@ fun PasswordProtectedDialog(
             Text("Cancel")
           }
           Spacer(modifier = Modifier.width(8.dp))
-          Button(
-            onClick = { onUnlock(password) },
-            shape = RoundedCornerShape(10.dp),
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = BrandBlue,
-                contentColor = Color.White,
-              ),
-            modifier = Modifier.testTag("btn_unlock_password"),
+          Box(
+            modifier =
+              Modifier.shadow(4.dp, RoundedCornerShape(10.dp), spotColor = BrandBlue)
+                .clip(RoundedCornerShape(10.dp))
+                .background(PrimaryGradient)
+                .clickable { onUnlock(password) }
+                .padding(horizontal = 16.dp, vertical = 9.dp)
+                .testTag("btn_unlock_password"),
+            contentAlignment = Alignment.Center,
           ) {
-            Text("Unlock")
+            Text(
+              text = "Unlock",
+              style =
+                MaterialTheme.typography.labelLarge.copy(
+                  fontWeight = FontWeight.SemiBold,
+                  color = Color.White,
+                ),
+            )
           }
         }
       }

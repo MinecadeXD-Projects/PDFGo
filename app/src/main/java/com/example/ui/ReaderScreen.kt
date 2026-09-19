@@ -52,6 +52,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -98,7 +100,10 @@ import com.example.model.SearchState
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.BrandBlue
 import com.example.ui.theme.Emerald400
+import com.example.ui.theme.PillControlGradient
+import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
+import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import java.net.URLEncoder
@@ -368,17 +373,6 @@ fun ReaderScreen(
                       onOpenSettings()
                     },
                   )
-                  DropdownMenuItem(
-                    text = {
-                      Text(
-                        if (fitMode == FitMode.FIT_WIDTH) "Fit to Page" else "Fit to Width"
-                      )
-                    },
-                    onClick = {
-                      isMenuExpanded = false
-                      onToggleFitMode()
-                    },
-                  )
                   HorizontalDivider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                   )
@@ -538,6 +532,14 @@ fun ReaderScreen(
               }
             }
           }
+
+          // Modern gradient accent line below toolbar
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(2.dp)
+                .background(PrimaryGradient),
+          )
         }
       }
 
@@ -596,13 +598,24 @@ fun ReaderScreen(
                       if (it.positionChanged()) it.consume()
                     }
                   } else if (activePointers.size == 1 && zoomScale > 1.05f) {
-                    // One finger when zoomed in: pan around the enlarged document
+                    // One finger when zoomed in: pan horizontally and vertically, allowing vertical scroll across pages
                     val panChange = event.calculatePan()
                     val maxPanX = (size.width * (zoomScale - 1f)) / 2f
                     val maxPanY = (size.height * (zoomScale - 1f)) / 2f
                     val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
                     val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+                    
+                    val verticalRemainder = (panOffset.y + panChange.y) - newY
                     panOffset = Offset(newX, newY)
+
+                    // If at vertical pan boundary, dispatch remainder to LazyColumn
+                    if (kotlin.math.abs(verticalRemainder) > 0.5f) {
+                      coroutineScope.launch {
+                        lazyListState.scrollBy(-verticalRemainder)
+                      }
+                    }
+
+                    // Always consume horizontal movement so page horizontal pan is smooth
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
                     }
@@ -823,10 +836,11 @@ fun ReaderScreen(
       Surface(
         onClick = onToggleFullscreen,
         shape = RoundedCornerShape(50.dp),
-        color = Slate900.copy(alpha = 0.9f),
+        color = Color.Transparent,
         contentColor = Color.White,
         shadowElevation = 8.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Brush.horizontalGradient(listOf(Slate800, Slate700))),
+        modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(PillControlGradient),
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -860,10 +874,11 @@ fun ReaderScreen(
     ) {
       Surface(
         shape = RoundedCornerShape(50.dp),
-        color = Slate900.copy(alpha = 0.95f),
+        color = Color.Transparent,
         contentColor = Color.White,
         shadowElevation = 10.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Brush.horizontalGradient(listOf(Slate800, Slate700))),
+        modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(PillControlGradient),
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -892,7 +907,7 @@ fun ReaderScreen(
             Box(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Slate800)
+                  .background(PrimaryGradient)
                   .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
               Text(

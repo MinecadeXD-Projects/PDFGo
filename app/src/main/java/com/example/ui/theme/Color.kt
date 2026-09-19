@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // PDFGo Palette - Slate & Deep Navy
@@ -7,6 +8,9 @@ val BrandBlue = Color(0xFF2563EB)
 val BrandBlueDark = Color(0xFF1D4ED8)
 val BrandBlueLight = Color(0xFFDBEAFE)
 val BrandBlueGlow = Color(0xFF3B82F6)
+val BrandIndigo = Color(0xFF4F46E5)
+val BrandCyan = Color(0xFF06B6D4)
+val BrandViolet = Color(0xFF7C3AED)
 
 val Slate950 = Color(0xFF090D16)
 val Slate900 = Color(0xFF0F172A)
@@ -28,3 +32,46 @@ val Amber500 = Color(0xFFF59E0B)
 val Rose500 = Color(0xFFF43F5E)
 val Rose600 = Color(0xFFE11D48)
 val Rose950 = Color(0xFF4C0519)
+
+// Modern Brand Gradients
+val PrimaryGradient = Brush.horizontalGradient(
+  colors = listOf(BrandBlue, BrandIndigo)
+)
+
+val PrimaryGradientVertical = Brush.verticalGradient(
+  colors = listOf(BrandBlue, BrandIndigo)
+)
+
+val HeroTextGradient = Brush.horizontalGradient(
+  colors = listOf(BrandBlue, BrandIndigo, BrandViolet)
+)
+
+val HeroBadgeGradient = Brush.horizontalGradient(
+  colors = listOf(BrandBlue.copy(alpha = 0.15f), BrandCyan.copy(alpha = 0.15f))
+)
+
+val CardBorderGradient = Brush.horizontalGradient(
+  colors = listOf(BrandBlue.copy(alpha = 0.65f), BrandIndigo.copy(alpha = 0.35f))
+)
+
+val DangerGradient = Brush.horizontalGradient(
+  colors = listOf(Rose500, Rose600)
+)
+
+val DarkSurfaceGradient = Brush.verticalGradient(
+  colors = listOf(Slate850, Slate950)
+)
+
+val TopBarGradient = Brush.verticalGradient(
+  colors = listOf(Slate900, Slate950)
+)
+
+val LightMeshGradient = Brush.radialGradient(
+  colors = listOf(BrandBlueLight.copy(alpha = 0.35f), Color.Transparent),
+  radius = 1200f
+)
+
+val PillControlGradient = Brush.horizontalGradient(
+  colors = listOf(Slate900, Slate950)
+)
+

@@ -48,6 +48,7 @@ import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.ui.theme.AppThemeSetting
 import com.example.ui.theme.BrandBlue
+import com.example.ui.theme.PrimaryGradient
 
 @Composable
 fun SettingsScreen(
@@ -107,6 +108,12 @@ fun SettingsScreen(
     HorizontalDivider(
       color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
       thickness = 1.dp,
+    )
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(2.dp)
+          .background(PrimaryGradient),
     )
 
     Column(
@@ -533,8 +540,12 @@ private fun ThemeOptionButton(
   Box(
     modifier =
       modifier
+        .shadow(if (isSelected) 3.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = BrandBlue)
         .clip(RoundedCornerShape(8.dp))
-        .background(if (isSelected) BrandBlue else Color.Transparent)
+        .then(
+          if (isSelected) Modifier.background(PrimaryGradient)
+          else Modifier.background(Color.Transparent)
+        )
         .clickable { onClick() }
         .padding(vertical = 8.dp),
     contentAlignment = Alignment.Center,

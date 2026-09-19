@@ -1,11 +1,15 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.DownloadModalState
@@ -93,6 +97,37 @@ class PdfViewModel(
     loadSavedStatus()
   }
 
+  private fun getThumbnailFile(): File? {
+    return try {
+      val context = getApplication<Application>()
+      File(context.cacheDir, "resume_thumbnail.png")
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun loadThumbnailFromDisk(): Bitmap? {
+    return try {
+      val file = getThumbnailFile()
+      if (file != null && file.exists()) {
+        BitmapFactory.decodeFile(file.absolutePath)
+      } else {
+        null
+      }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun saveThumbnailToDisk(bitmap: Bitmap) {
+    try {
+      val file = getThumbnailFile() ?: return
+      FileOutputStream(file).use { out ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
+      }
+    } catch (_: Exception) {}
+  }
+
   private fun loadSavedStatus() {
     val prefs = sharedPreferences ?: return
     _saveReadingPosition.value = prefs.getBoolean("pref_save_reading_position", true)
@@ -101,16 +136,24 @@ class PdfViewModel(
       val lastTitle = prefs.getString("last_title", "Document.pdf") ?: "Document.pdf"
       val lastPage = prefs.getInt("page_$lastUrl", 1)
       val lastTotal = prefs.getInt("last_total_pages", 1)
+      val thumb = loadThumbnailFromDisk()
       _savedDocumentStatus.value = SavedDocumentStatus(
         url = lastUrl,
         title = lastTitle,
         page = lastPage,
-        totalPages = lastTotal
+        totalPages = lastTotal,
+        thumbnailBitmap = thumb
       )
     }
   }
 
-  private fun persistReadingPosition(url: String, title: String, page: Int, totalPages: Int) {
+  private fun persistReadingPosition(
+    url: String,
+    title: String,
+    page: Int,
+    totalPages: Int,
+    thumbnail: Bitmap? = null
+  ) {
     if (!_saveReadingPosition.value) return
     sharedPreferences?.edit()
       ?.putString("last_url", url)
@@ -118,7 +161,12 @@ class PdfViewModel(
       ?.putInt("page_$url", page)
       ?.putInt("last_total_pages", totalPages)
       ?.apply()
-    _savedDocumentStatus.value = SavedDocumentStatus(url, title, page, totalPages)
+
+    if (thumbnail != null) {
+      saveThumbnailToDisk(thumbnail)
+    }
+    val effectiveThumb = thumbnail ?: _savedDocumentStatus.value?.thumbnailBitmap ?: loadThumbnailFromDisk()
+    _savedDocumentStatus.value = SavedDocumentStatus(url, title, page, totalPages, effectiveThumb)
   }
 
   // Reader state
@@ -309,7 +357,8 @@ class PdfViewModel(
           useWebViewFallback = false
         )
         _currentScreen.value = Screen.READER
-        persistReadingPosition(url, filename, initialPage, totalPageCount)
+        val firstPageBmp = pageBitmaps.firstOrNull()
+        persistReadingPosition(url, filename, initialPage, totalPageCount, firstPageBmp)
         if (initialPage > 1) {
           showToast("Resumed at page $initialPage of $totalPageCount", ToastType.SUCCESS)
         } else {
@@ -542,52 +591,118 @@ class PdfViewModel(
     downloadJob?.cancel()
     downloadJob = viewModelScope.launch {
       val doc = _activeDocument.value
-      val filename = _downloadState.value.filename.ifBlank { doc?.title ?: "Document.pdf" }
+      var filename = _downloadState.value.filename.ifBlank { doc?.title ?: "Document.pdf" }
+      if (!filename.endsWith(".pdf", ignoreCase = true)) {
+        filename += ".pdf"
+      }
 
       _downloadState.update {
         it.copy(
           isDownloading = true,
           progressPercent = 35,
-          progressBytes = "Saving file…"
+          progressBytes = "Saving to Downloads/PDFGo/…"
         )
       }
+
+      var downloadSucceeded = false
+      var savedPath = "Downloads/PDFGo/$filename"
 
       withContext(ioDispatcher) {
         try {
           val context = try { getApplication<Application>() } catch (_: Exception) { null }
+          val srcFile = doc?.localFilePath?.let { File(it) }
+
           if (context != null) {
-            val downloadsDir = File(
-              context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-              "PDFGo"
-            ).apply { mkdirs() }
+            // Method 1: MediaStore (standard on modern Android, creates public Downloads/PDFGo folder)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+              val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/PDFGo")
+              }
+              val resolver = context.contentResolver
+              val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+              if (uri != null) {
+                resolver.openOutputStream(uri)?.use { output ->
+                  if (srcFile != null && srcFile.exists()) {
+                    srcFile.inputStream().use { input -> input.copyTo(output) }
+                    downloadSucceeded = true
+                  } else if (doc?.url != null) {
+                    val req = Request.Builder().url(doc.url).build()
+                    val resp = httpClient.newCall(req).execute()
+                    resp.body?.byteStream()?.use { input -> input.copyTo(output) }
+                    downloadSucceeded = true
+                  }
+                }
+              }
+            }
 
-            val destFile = File(downloadsDir, filename)
-            val srcFile = doc?.localFilePath?.let { File(it) }
+            // Method 2: Public External Storage Downloads folder fallback
+            if (!downloadSucceeded) {
+              val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+              val pdfGoDir = File(publicDownloads, "PDFGo")
+              if (!pdfGoDir.exists()) {
+                pdfGoDir.mkdirs()
+              }
+              val destFile = File(pdfGoDir, filename)
+              if (srcFile != null && srcFile.exists()) {
+                srcFile.copyTo(destFile, overwrite = true)
+                downloadSucceeded = true
+              } else if (doc?.url != null) {
+                val req = Request.Builder().url(doc.url).build()
+                val resp = httpClient.newCall(req).execute()
+                resp.body?.byteStream()?.use { input ->
+                  FileOutputStream(destFile).use { output -> input.copyTo(output) }
+                }
+                downloadSucceeded = true
+              }
+            }
 
-            if (srcFile != null && srcFile.exists()) {
-              srcFile.copyTo(destFile, overwrite = true)
-            } else if (doc?.url != null) {
-              val req = Request.Builder().url(doc.url).build()
-              val resp = httpClient.newCall(req).execute()
-              resp.body?.byteStream()?.use { input ->
-                FileOutputStream(destFile).use { output -> input.copyTo(output) }
+            // Method 3: App-specific external files Downloads directory fallback
+            if (!downloadSucceeded) {
+              val appDownloads = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "PDFGo")
+              if (!appDownloads.exists()) {
+                appDownloads.mkdirs()
+              }
+              val destFile = File(appDownloads, filename)
+              if (srcFile != null && srcFile.exists()) {
+                srcFile.copyTo(destFile, overwrite = true)
+                downloadSucceeded = true
+              } else if (doc?.url != null) {
+                val req = Request.Builder().url(doc.url).build()
+                val resp = httpClient.newCall(req).execute()
+                resp.body?.byteStream()?.use { input ->
+                  FileOutputStream(destFile).use { output -> input.copyTo(output) }
+                }
+                downloadSucceeded = true
               }
             }
           }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+          downloadSucceeded = false
+        }
       }
 
-      delay(300)
-      _downloadState.update {
-        it.copy(
-          progressPercent = 100,
-          progressBytes = "Saved to Downloads/PDFGo/",
-          isCompleted = true
-        )
+      if (downloadSucceeded) {
+        _downloadState.update {
+          it.copy(
+            progressPercent = 100,
+            progressBytes = "Saved to Downloads/PDFGo/$filename",
+            isCompleted = true
+          )
+        }
+        delay(500)
+        _downloadState.value = DownloadModalState(isOpen = false)
+        showToast("Saved to Downloads/PDFGo/$filename", ToastType.SUCCESS)
+      } else {
+        _downloadState.update {
+          it.copy(
+            isDownloading = false,
+            progressBytes = "Download failed. Check connection."
+          )
+        }
+        showToast("Failed to save PDF", ToastType.WARNING)
       }
-      delay(500)
-      _downloadState.value = DownloadModalState(isOpen = false)
-      showToast("Saved to Downloads/PDFGo/", ToastType.SUCCESS)
     }
   }
 
@@ -610,6 +725,9 @@ class PdfViewModel(
         ?.remove("last_title")
         ?.remove("last_total_pages")
         ?.apply()
+      try {
+        getThumbnailFile()?.delete()
+      } catch (_: Exception) {}
     }
     _savedDocumentStatus.value = null
     _activeDocument.value = null

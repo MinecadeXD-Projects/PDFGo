@@ -25,7 +25,8 @@ data class SavedDocumentStatus(
   val url: String,
   val title: String,
   val page: Int,
-  val totalPages: Int
+  val totalPages: Int,
+  val thumbnailBitmap: Bitmap? = null
 )
 
 data class PdfDocument(
