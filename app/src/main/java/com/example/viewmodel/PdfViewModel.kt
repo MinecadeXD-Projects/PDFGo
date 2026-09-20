@@ -742,7 +742,10 @@ class PdfViewModel(
   // Download Dialog
   fun openDownloadModal() {
     val doc = _activeDocument.value
-    val filename = doc?.title ?: "Document.pdf"
+    var filename = doc?.title ?: "Document"
+    if (filename.endsWith(".pdf", ignoreCase = true)) {
+      filename = filename.substring(0, filename.length - 4)
+    }
     _downloadState.value = DownloadModalState(
       isOpen = true,
       filename = filename,
@@ -766,7 +769,15 @@ class PdfViewModel(
     downloadJob?.cancel()
     downloadJob = viewModelScope.launch {
       val doc = _activeDocument.value
-      var filename = _downloadState.value.filename.ifBlank { doc?.title ?: "Document.pdf" }
+      var baseFilename = _downloadState.value.filename.ifBlank {
+        val title = doc?.title ?: "Document"
+        if (title.endsWith(".pdf", ignoreCase = true)) {
+          title.substring(0, title.length - 4)
+        } else {
+          title
+        }
+      }
+      var filename = baseFilename
       if (!filename.endsWith(".pdf", ignoreCase = true)) {
         filename += ".pdf"
       }

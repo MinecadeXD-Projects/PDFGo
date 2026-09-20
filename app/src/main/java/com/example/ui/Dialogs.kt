@@ -141,6 +141,15 @@ fun DownloadPdfDialog(
                 focusedBorderColor = BrandBlue,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,
               ),
+            suffix = {
+              Text(
+                text = ".pdf",
+                style = MaterialTheme.typography.bodySmall.copy(
+                  fontFamily = FontFamily.Monospace,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+              )
+            },
             modifier = Modifier.fillMaxWidth().testTag("input_download_filename"),
           )
         }

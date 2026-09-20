@@ -979,6 +979,9 @@ fun ReaderScreen(
     if (showJumpDialog) {
       AlertDialog(
         onDismissRequest = { showJumpDialog = false },
+        containerColor = Color(0xFF1E293B), // Slate800ish
+        titleContentColor = Color.White,
+        textContentColor = Color.White.copy(alpha = 0.9f),
         title = { Text("Jump to Page") },
         text = {
           Column(
@@ -994,6 +997,13 @@ fun ReaderScreen(
               onValueChange = { jumpInputText = it },
               singleLine = true,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = BrandBlue,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                cursorColor = BrandBlue,
+              ),
               modifier = Modifier.fillMaxWidth().testTag("input_jump_page")
             )
           }
@@ -1008,7 +1018,7 @@ fun ReaderScreen(
             },
             modifier = Modifier.testTag("btn_jump_confirm")
           ) {
-            Text("Go")
+            Text("Go", color = BrandBlue)
           }
         },
         dismissButton = {
@@ -1016,9 +1026,10 @@ fun ReaderScreen(
             onClick = { showJumpDialog = false },
             modifier = Modifier.testTag("btn_jump_cancel")
           ) {
-            Text("Cancel")
+            Text("Cancel", color = Color.White.copy(alpha = 0.7f))
           }
-        }
+        },
+        shape = RoundedCornerShape(16.dp)
       )
     }
   }
