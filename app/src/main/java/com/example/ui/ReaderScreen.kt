@@ -47,6 +47,10 @@ import androidx.compose.material.icons.filled.NavigateNext
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -206,6 +210,20 @@ fun ReaderScreen(
       }
     } else {
       onChangePage(delta)
+    }
+  }
+
+  var showJumpDialog by remember { mutableStateOf(false) }
+  var jumpInputText by remember { mutableStateOf("") }
+
+  val jumpToPage: (Int) -> Unit = { pageNum ->
+    if (document.totalPages > 0) {
+      val targetPage = pageNum.coerceIn(1, document.totalPages)
+      val targetIdx = targetPage - 1
+      onSetPage(targetPage)
+      coroutineScope.launch {
+        lazyListState.scrollToItem(targetIdx)
+      }
     }
   }
 
@@ -695,7 +713,6 @@ fun ReaderScreen(
 
                 PdfPageCard(
                   pageNumber = pageNum,
-                  totalPages = document.totalPages,
                   zoomPercent = document.zoomPercent,
                   preloadedBitmap = document.pageBitmaps.getOrNull(index),
                   getPageBitmap = getPageBitmap,
@@ -895,6 +912,14 @@ fun ReaderScreen(
 
           // Page Number Indicator
           Row(
+            modifier = Modifier
+              .clip(RoundedCornerShape(6.dp))
+              .clickable {
+                jumpInputText = "${document.currentPage}"
+                showJumpDialog = true
+              }
+              .padding(horizontal = 6.dp, vertical = 2.dp)
+              .testTag("btn_page_indicator"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
           ) {
@@ -950,13 +975,58 @@ fun ReaderScreen(
         }
       }
     }
+
+    if (showJumpDialog) {
+      AlertDialog(
+        onDismissRequest = { showJumpDialog = false },
+        title = { Text("Jump to Page") },
+        text = {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Text(
+              text = "Enter page number (1 - ${document.totalPages}):",
+              style = MaterialTheme.typography.bodyMedium
+            )
+            OutlinedTextField(
+              value = jumpInputText,
+              onValueChange = { jumpInputText = it },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              modifier = Modifier.fillMaxWidth().testTag("input_jump_page")
+            )
+          }
+        },
+        confirmButton = {
+          TextButton(
+            onClick = {
+              showJumpDialog = false
+              val pageNum = jumpInputText.toIntOrNull() ?: document.currentPage
+              val clamped = pageNum.coerceIn(1, maxOf(1, document.totalPages))
+              jumpToPage(clamped)
+            },
+            modifier = Modifier.testTag("btn_jump_confirm")
+          ) {
+            Text("Go")
+          }
+        },
+        dismissButton = {
+          TextButton(
+            onClick = { showJumpDialog = false },
+            modifier = Modifier.testTag("btn_jump_cancel")
+          ) {
+            Text("Cancel")
+          }
+        }
+      )
+    }
   }
 }
 
 @Composable
 fun PdfPageCard(
   pageNumber: Int,
-  totalPages: Int,
   zoomPercent: Int = 100,
   preloadedBitmap: Bitmap?,
   getPageBitmap: (suspend (Int) -> Bitmap?)?,
@@ -1012,7 +1082,7 @@ fun PdfPageCard(
       if (displayedBitmap != null) {
         Image(
           bitmap = displayedBitmap!!.asImageBitmap(),
-          contentDescription = "Page $pageNumber of $totalPages",
+          contentDescription = "Page $pageNumber",
           modifier = Modifier.fillMaxWidth(),
           contentScale = ContentScale.FillWidth,
         )
@@ -1070,40 +1140,20 @@ fun PdfPageCard(
         }
 
         Surface(
-          shape = RoundedCornerShape(8.dp),
-          color = Slate900.copy(alpha = 0.78f),
+          shape = RoundedCornerShape(6.dp),
+          color = Slate900.copy(alpha = 0.75f),
           contentColor = Color.White,
         ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            Text(
-              text = "$pageNumber",
-              style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                color = Color.White,
-              ),
-            )
-            Text(
-              text = "/",
-              style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.55f),
-              ),
-            )
-            Text(
-              text = "$totalPages",
-              style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.8f),
-              ),
-            )
-          }
+          Text(
+            text = "$pageNumber",
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall.copy(
+              fontFamily = FontFamily.Monospace,
+              fontWeight = FontWeight.Bold,
+              fontSize = 10.sp,
+              color = Color.White,
+            ),
+          )
         }
       }
     }
