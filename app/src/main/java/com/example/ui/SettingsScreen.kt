@@ -44,7 +44,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.ui.theme.AppThemeSetting
 import com.example.ui.theme.BrandBlue
@@ -53,20 +52,17 @@ import com.example.ui.theme.PrimaryGradient
 @Composable
 fun SettingsScreen(
   currentTheme: AppThemeSetting,
-  fitMode: FitMode,
   pageSpacing: PageSpacing,
   keepScreenAwake: Boolean,
   saveReadingPosition: Boolean,
   onBack: () -> Unit,
   onThemeChange: (AppThemeSetting) -> Unit,
-  onFitModeChange: (FitMode) -> Unit,
   onPageSpacingChange: (PageSpacing) -> Unit,
   onToggleKeepAwake: () -> Unit,
   onToggleSavePosition: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val scrollState = rememberScrollState()
-  var isFitModeDropdownOpen by remember { mutableStateOf(false) }
   var isSpacingDropdownOpen by remember { mutableStateOf(false) }
 
   Column(
@@ -213,77 +209,6 @@ fun SettingsScreen(
                 RoundedCornerShape(16.dp),
               ),
         ) {
-          // Default Page Fit
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-              Text(
-                text = "Default Page Fit",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                  ),
-              )
-              Text(
-                text = "Automatically adjust scale on open",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                  ),
-              )
-            }
-
-            Box {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(
-                      1.dp,
-                      MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-                      RoundedCornerShape(8.dp),
-                    )
-                    .clickable { isFitModeDropdownOpen = true }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                    .testTag("select_fit_mode"),
-              ) {
-                Text(
-                  text = fitMode.label,
-                  style =
-                    MaterialTheme.typography.bodySmall.copy(
-                      fontWeight = FontWeight.Medium,
-                      color = MaterialTheme.colorScheme.onSurface,
-                      fontSize = 11.sp,
-                    ),
-                )
-              }
-
-              DropdownMenu(
-                expanded = isFitModeDropdownOpen,
-                onDismissRequest = { isFitModeDropdownOpen = false },
-              ) {
-                FitMode.entries.forEach { mode ->
-                  DropdownMenuItem(
-                    text = { Text(mode.label) },
-                    onClick = {
-                      isFitModeDropdownOpen = false
-                      onFitModeChange(mode)
-                    },
-                  )
-                }
-              }
-            }
-          }
-
-          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
           // Page Spacing
           Row(
             modifier =

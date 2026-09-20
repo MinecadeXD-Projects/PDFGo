@@ -10,11 +10,6 @@ enum class Screen {
   SETTINGS
 }
 
-enum class FitMode(val label: String) {
-  FIT_WIDTH("Fit to Width"),
-  FIT_PAGE("Fit to Page")
-}
-
 enum class PageSpacing(val label: String, val dpValue: Int) {
   NORMAL("Normal (16dp)", 16),
   COMPACT("Compact (8dp)", 8),

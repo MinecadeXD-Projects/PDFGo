@@ -77,7 +77,6 @@ fun PdfGoApp(
   val urlError by viewModel.urlError.collectAsState()
   val loadingProgress by viewModel.loadingProgress.collectAsState()
   val themeSetting by viewModel.themeSetting.collectAsState()
-  val fitMode by viewModel.fitMode.collectAsState()
   val pageSpacing by viewModel.pageSpacing.collectAsState()
   val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
   val saveReadingPosition by viewModel.saveReadingPosition.collectAsState()
@@ -144,7 +143,6 @@ fun PdfGoApp(
                 document = doc,
                 isFullscreen = isFullscreen,
                 searchState = searchState,
-                fitMode = fitMode,
                 pageSpacing = pageSpacing,
                 onBack = { viewModel.navigateBackFromReader() },
                 onToggleFullscreen = { viewModel.toggleFullscreen() },
@@ -156,7 +154,6 @@ fun PdfGoApp(
                 onOpenDownloadModal = { viewModel.openDownloadModal() },
                 onOpenRemoveModal = { viewModel.openRemovePdfModal() },
                 onOpenSettings = { viewModel.openSettings(Screen.READER) },
-                onToggleFitMode = { viewModel.toggleFitMode() },
                 onChangePage = { viewModel.changePage(it) },
                 onSetPage = { viewModel.setPage(it) },
                 onAdjustZoom = { viewModel.adjustZoom(it) },
@@ -181,13 +178,11 @@ fun PdfGoApp(
           Screen.SETTINGS -> {
             SettingsScreen(
               currentTheme = themeSetting,
-              fitMode = fitMode,
               pageSpacing = pageSpacing,
               keepScreenAwake = keepScreenAwake,
               saveReadingPosition = saveReadingPosition,
               onBack = { viewModel.navigateBackFromSettings() },
               onThemeChange = { viewModel.setTheme(it) },
-              onFitModeChange = { viewModel.setFitMode(it) },
               onPageSpacingChange = { viewModel.setPageSpacing(it) },
               onToggleKeepAwake = { viewModel.toggleKeepScreenAwake() },
               onToggleSavePosition = { viewModel.toggleSaveReadingPosition() },

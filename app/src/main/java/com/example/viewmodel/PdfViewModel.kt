@@ -14,7 +14,6 @@ import android.util.LruCache
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.DownloadModalState
-import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.PdfDocument
 import com.example.model.SavedDocumentStatus
@@ -81,9 +80,6 @@ class PdfViewModel(
   private val _themeSetting = MutableStateFlow(AppThemeSetting.DARK)
   val themeSetting: StateFlow<AppThemeSetting> = _themeSetting.asStateFlow()
 
-  private val _fitMode = MutableStateFlow(FitMode.FIT_WIDTH)
-  val fitMode: StateFlow<FitMode> = _fitMode.asStateFlow()
-
   private val _pageSpacing = MutableStateFlow(PageSpacing.COMPACT)
   val pageSpacing: StateFlow<PageSpacing> = _pageSpacing.asStateFlow()
 
@@ -118,13 +114,6 @@ class PdfViewModel(
       AppThemeSetting.valueOf(themeStr ?: AppThemeSetting.DARK.name)
     } catch (_: Exception) {
       AppThemeSetting.DARK
-    }
-
-    val fitStr = prefs.getString("pref_fit_mode", FitMode.FIT_WIDTH.name)
-    _fitMode.value = try {
-      FitMode.valueOf(fitStr ?: FitMode.FIT_WIDTH.name)
-    } catch (_: Exception) {
-      FitMode.FIT_WIDTH
     }
 
     val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.COMPACT.name)
@@ -571,17 +560,6 @@ class PdfViewModel(
   fun setTheme(setting: AppThemeSetting) {
     _themeSetting.value = setting
     sharedPreferences?.edit()?.putString("pref_theme", setting.name)?.apply()
-  }
-
-  fun setFitMode(mode: FitMode) {
-    _fitMode.value = mode
-    sharedPreferences?.edit()?.putString("pref_fit_mode", mode.name)?.apply()
-    showToast("Mode: ${mode.label}", ToastType.INFO)
-  }
-
-  fun toggleFitMode() {
-    val next = if (_fitMode.value == FitMode.FIT_WIDTH) FitMode.FIT_PAGE else FitMode.FIT_WIDTH
-    setFitMode(next)
   }
 
   fun setPageSpacing(spacing: PageSpacing) {

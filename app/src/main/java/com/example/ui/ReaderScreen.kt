@@ -52,6 +52,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -96,7 +97,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.PdfDocument
 import com.example.model.SearchState
@@ -118,7 +118,6 @@ fun ReaderScreen(
   document: PdfDocument,
   isFullscreen: Boolean,
   searchState: SearchState,
-  fitMode: FitMode,
   pageSpacing: PageSpacing,
   onBack: () -> Unit,
   onToggleFullscreen: () -> Unit,
@@ -130,7 +129,6 @@ fun ReaderScreen(
   onOpenDownloadModal: () -> Unit,
   onOpenRemoveModal: () -> Unit,
   onOpenSettings: () -> Unit,
-  onToggleFitMode: () -> Unit,
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
   onAdjustZoom: (Int) -> Unit = {},
@@ -612,10 +610,16 @@ fun ReaderScreen(
                       zoomScale = 1f
                       panOffset = Offset.Zero
                     } else {
+                      val centroid = event.calculateCentroid(useCurrent = true)
+                      val centroidRelative = centroid - Offset(size.width / 2f, size.height / 2f)
+
                       val maxPanX = (size.width * (newScale - 1f)) / 2f
                       val maxPanY = (size.height * (newScale - 1f)) / 2f
-                      val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
-                      val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+
+                      // Mathematical zoom focus centering (translates pan offset to anchor zoom at gesture centroid)
+                      val newX = (panOffset.x * zoomChange + panChange.x + centroidRelative.x * (1f - zoomChange)).coerceIn(-maxPanX, maxPanX)
+                      val newY = (panOffset.y * zoomChange + panChange.y + centroidRelative.y * (1f - zoomChange)).coerceIn(-maxPanY, maxPanY)
+
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
                     }
@@ -693,7 +697,6 @@ fun ReaderScreen(
                   preloadedBitmap = document.pageBitmaps.getOrNull(index),
                   getPageBitmap = getPageBitmap,
                   pageIndex = index,
-                  fitMode = fitMode,
                   isMatchedPage = isMatchedPage,
                   isCurrentMatchPage = isCurrentMatchPage,
                 )
@@ -955,7 +958,6 @@ fun PdfPageCard(
   preloadedBitmap: Bitmap?,
   getPageBitmap: (suspend (Int) -> Bitmap?)?,
   pageIndex: Int,
-  fitMode: FitMode,
   isMatchedPage: Boolean,
   isCurrentMatchPage: Boolean,
   modifier: Modifier = Modifier,
@@ -994,7 +996,7 @@ fun PdfPageCard(
     colors = CardDefaults.cardColors(containerColor = Color.White),
     elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
     modifier = modifier
-      .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
+      .widthIn(max = 680.dp)
       .fillMaxWidth()
       .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
   ) {
