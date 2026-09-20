@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -24,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.model.Screen
+import com.example.ui.ClearCacheDialog
 import com.example.ui.DownloadPdfDialog
 import com.example.ui.ExitAppDialog
 import com.example.ui.HomeScreen
@@ -59,6 +61,13 @@ class MainActivity : ComponentActivity() {
         PdfGoApp(
           viewModel = viewModel,
           onExitApp = { finish() },
+          onRestartApp = {
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            finish()
+            Runtime.getRuntime().exit(0)
+          },
         )
       }
     }
@@ -69,6 +78,7 @@ class MainActivity : ComponentActivity() {
 fun PdfGoApp(
   viewModel: PdfViewModel,
   onExitApp: () -> Unit,
+  onRestartApp: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val currentScreen by viewModel.currentScreen.collectAsState()
@@ -86,6 +96,7 @@ fun PdfGoApp(
   val downloadState by viewModel.downloadState.collectAsState()
   val isRemoveModalOpen by viewModel.isRemoveModalOpen.collectAsState()
   val isExitModalOpen by viewModel.isExitModalOpen.collectAsState()
+  val isClearCacheModalOpen by viewModel.isClearCacheModalOpen.collectAsState()
   val isPasswordModalOpen by viewModel.isPasswordModalOpen.collectAsState()
   val cacheSizeFormatted by viewModel.cacheSizeFormatted.collectAsState()
   val toastMessage by viewModel.toastMessage.collectAsState()
@@ -188,7 +199,7 @@ fun PdfGoApp(
               onToggleKeepAwake = { viewModel.toggleKeepScreenAwake() },
               onToggleSavePosition = { viewModel.toggleSaveReadingPosition() },
               cacheSize = cacheSizeFormatted,
-              onClearCache = { viewModel.clearAllCache() },
+              onOpenClearCacheDialog = { viewModel.openClearCacheModal() },
             )
           }
         }
@@ -215,6 +226,16 @@ fun PdfGoApp(
           onExitApp()
         },
         onDismiss = { viewModel.closeExitModal() },
+      )
+
+      ClearCacheDialog(
+        isOpen = isClearCacheModalOpen,
+        onConfirm = {
+          viewModel.closeClearCacheModal()
+          viewModel.clearAllCache()
+          onRestartApp()
+        },
+        onDismiss = { viewModel.closeClearCacheModal() },
       )
 
       PasswordProtectedDialog(

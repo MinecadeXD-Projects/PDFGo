@@ -75,6 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,6 +144,10 @@ fun ReaderScreen(
   var isMenuExpanded by remember { mutableStateOf(false) }
   val lazyListState = rememberLazyListState()
   val coroutineScope = rememberCoroutineScope()
+
+  // Track page aspect ratios dynamically to prevent list layout shifting when scrolling up
+  val pageAspectRatios = remember(document.url) { mutableStateMapOf<Int, Float>() }
+  var docAspectRatio by remember(document.url) { mutableFloatStateOf(0.707f) }
 
   // Two-finger pinch to zoom & pan state
   var zoomScale by remember { mutableFloatStateOf(1f) }
@@ -711,6 +716,7 @@ fun ReaderScreen(
                 val isCurrentMatchPage = searchState.isOpen &&
                   searchState.matches.getOrNull(searchState.currentMatchIndex - 1)?.page == pageNum
 
+                val pageRatio = pageAspectRatios[index] ?: docAspectRatio
                 PdfPageCard(
                   pageNumber = pageNum,
                   zoomPercent = document.zoomPercent,
@@ -719,6 +725,15 @@ fun ReaderScreen(
                   pageIndex = index,
                   isMatchedPage = isMatchedPage,
                   isCurrentMatchPage = isCurrentMatchPage,
+                  initialAspectRatio = pageRatio,
+                  onAspectRatioLoaded = { ratio ->
+                    if (ratio > 0.1f) {
+                      pageAspectRatios[index] = ratio
+                      if (docAspectRatio == 0.707f) {
+                        docAspectRatio = ratio
+                      }
+                    }
+                  }
                 )
               }
             }
@@ -1044,6 +1059,8 @@ fun PdfPageCard(
   pageIndex: Int,
   isMatchedPage: Boolean,
   isCurrentMatchPage: Boolean,
+  initialAspectRatio: Float,
+  onAspectRatioLoaded: (Float) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
@@ -1068,6 +1085,16 @@ fun PdfPageCard(
     }
   }
 
+  val aspectRatio = if (displayedBitmap != null) {
+    val ratio = displayedBitmap!!.width.toFloat() / displayedBitmap!!.height.toFloat()
+    if (ratio > 0.1f) {
+      onAspectRatioLoaded(ratio)
+    }
+    ratio
+  } else {
+    initialAspectRatio
+  }
+
   val borderColor = when {
     isCurrentMatchPage -> BrandBlue
     isMatchedPage -> Amber500
@@ -1087,7 +1114,7 @@ fun PdfPageCard(
     Box(
       modifier = Modifier
         .fillMaxWidth()
-        .then(if (displayedBitmap == null) Modifier.aspectRatio(0.707f) else Modifier),
+        .aspectRatio(aspectRatio),
       contentAlignment = Alignment.Center
     ) {
       if (displayedBitmap != null) {

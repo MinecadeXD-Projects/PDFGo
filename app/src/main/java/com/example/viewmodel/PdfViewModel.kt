@@ -224,6 +224,9 @@ class PdfViewModel(
   private val _isPasswordModalOpen = MutableStateFlow(false)
   val isPasswordModalOpen: StateFlow<Boolean> = _isPasswordModalOpen.asStateFlow()
 
+  private val _isClearCacheModalOpen = MutableStateFlow(false)
+  val isClearCacheModalOpen: StateFlow<Boolean> = _isClearCacheModalOpen.asStateFlow()
+
   // Toast
   private val _toastMessage = MutableStateFlow<ToastMessage?>(null)
   val toastMessage: StateFlow<ToastMessage?> = _toastMessage.asStateFlow()
@@ -1033,6 +1036,14 @@ class PdfViewModel(
 
   fun closeExitModal() {
     _isExitModalOpen.value = false
+  }
+
+  fun openClearCacheModal() {
+    _isClearCacheModalOpen.value = true
+  }
+
+  fun closeClearCacheModal() {
+    _isClearCacheModalOpen.value = false
   }
 
   // Toast

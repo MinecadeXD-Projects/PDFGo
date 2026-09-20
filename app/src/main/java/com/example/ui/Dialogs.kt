@@ -57,6 +57,56 @@ import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
 
 @Composable
+fun ClearCacheDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  if (!isOpen) return
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(24.dp),
+      color = MaterialTheme.colorScheme.surface,
+      modifier = Modifier.padding(16.dp),
+    ) {
+      Column(
+        modifier = Modifier.padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+          )
+          Text(
+            text = "Clear Cache?",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+          )
+        }
+        Text(
+          text = "This will permanently delete all cached PDF files and rendered page images. The application will restart automatically to complete this process.",
+          style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+        ) {
+          TextButton(onClick = onDismiss) { Text("Cancel") }
+          Button(
+            onClick = onConfirm,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+          ) { Text("Clear & Restart") }
+        }
+      }
+    }
+  }
+}
+
+@Composable
 fun DownloadPdfDialog(
   state: DownloadModalState,
   onFilenameChange: (String) -> Unit,

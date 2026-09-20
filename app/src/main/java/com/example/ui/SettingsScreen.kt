@@ -63,7 +63,7 @@ fun SettingsScreen(
   onToggleKeepAwake: () -> Unit,
   onToggleSavePosition: () -> Unit,
   cacheSize: String = "0.0 KB",
-  onClearCache: (() -> Unit)? = null,
+  onOpenClearCacheDialog: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val scrollState = rememberScrollState()
@@ -444,7 +444,7 @@ fun SettingsScreen(
                     MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
                     RoundedCornerShape(8.dp),
                   )
-                  .clickable { onClearCache?.invoke() }
+                  .clickable { onOpenClearCacheDialog?.invoke() }
                   .padding(horizontal = 12.dp, vertical = 7.dp)
                   .testTag("btn_clear_cache"),
               contentAlignment = Alignment.Center,
