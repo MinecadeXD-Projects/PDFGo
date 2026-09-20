@@ -178,28 +178,52 @@ fun ReaderScreen(
     }
   }
 
+  var visiblePageRangeStr by remember { mutableStateOf("${document.currentPage}") }
+
   // Observe scroll position to update the page counter dynamically as user scrolls
   LaunchedEffect(lazyListState) {
     snapshotFlow {
       val layoutInfo = lazyListState.layoutInfo
       val visibleItems = layoutInfo.visibleItemsInfo
       if (visibleItems.isNotEmpty()) {
+        val viewportTop = layoutInfo.viewportStartOffset
+        val viewportBottom = layoutInfo.viewportEndOffset
+
+        // Find all pages that are completely visible (fully inside the viewport)
+        val completelyVisible = visibleItems.filter { item ->
+          item.offset >= viewportTop && (item.offset + item.size) <= viewportBottom
+        }
+
+        // Calculate most visible page for standard view-tracking / persistence
         val mostVisible = visibleItems.maxByOrNull { item ->
           val itemTop = item.offset
           val itemBottom = item.offset + item.size
-          val viewportTop = layoutInfo.viewportStartOffset
-          val viewportBottom = layoutInfo.viewportEndOffset
-          
           maxOf(0, minOf(itemBottom, viewportBottom) - maxOf(itemTop, viewportTop))
         }
-        val calculated = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
-        calculated.coerceIn(1, maxOf(1, document.totalPages))
+        val fallbackPage = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
+        val coercedFallback = fallbackPage.coerceIn(1, maxOf(1, document.totalPages))
+
+        val rangeStr = if (completelyVisible.isNotEmpty()) {
+          val firstPageNum = completelyVisible.first().index + 1
+          val lastPageNum = completelyVisible.last().index + 1
+          if (firstPageNum == lastPageNum) {
+            "$firstPageNum"
+          } else {
+            "$firstPageNum-$lastPageNum"
+          }
+        } else {
+          "$coercedFallback"
+        }
+
+        Pair(coercedFallback, rangeStr)
       } else {
-        (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, maxOf(1, document.totalPages))
+        val fallback = (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, maxOf(1, document.totalPages))
+        Pair(fallback, "$fallback")
       }
     }
       .distinctUntilChanged()
-      .collect { page ->
+      .collect { (page, rangeStr) ->
+        visiblePageRangeStr = rangeStr
         if (lazyListState.isScrollInProgress && page != document.currentPage) {
           onSetPage(page)
         }
@@ -948,7 +972,7 @@ fun ReaderScreen(
                   .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
               Text(
-                text = "${document.currentPage}",
+                text = visiblePageRangeStr,
                 style =
                   MaterialTheme.typography.labelMedium.copy(
                     fontFamily = FontFamily.Monospace,

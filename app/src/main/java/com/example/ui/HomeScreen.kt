@@ -271,7 +271,7 @@ fun HomeScreen(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-            val thumbnailRatio = savedDocument.thumbnailBitmap?.let {
+             val thumbnailRatio = savedDocument.thumbnailBitmap?.let {
               it.width.toFloat() / it.height.toFloat()
             } ?: 0.707f // Default A4
 
@@ -280,9 +280,9 @@ fun HomeScreen(
                   Modifier
                     .width(50.dp)
                     .aspectRatio(thumbnailRatio)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(3.dp))
                     .background(Brush.horizontalGradient(listOf(BrandBlue.copy(alpha = 0.16f), BrandIndigo.copy(alpha = 0.12f))))
-                    .border(1.dp, BrandBlue.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
+                    .border(1.dp, BrandBlue.copy(alpha = 0.25f), RoundedCornerShape(3.dp)),
                 contentAlignment = Alignment.Center,
               ) {
                 if (savedDocument.thumbnailBitmap != null) {
@@ -290,7 +290,7 @@ fun HomeScreen(
                     bitmap = savedDocument.thumbnailBitmap.asImageBitmap(),
                     contentDescription = "Page 1 Thumbnail",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
+                    contentScale = ContentScale.FillBounds,
                   )
                 } else {
                   Icon(

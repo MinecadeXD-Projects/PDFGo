@@ -989,12 +989,12 @@ class PdfViewModel(
             file.delete()
           }
         }
-        
-        // Remove all saved reading positions
+        // Remove all saved reading positions and last document state
         sharedPreferences?.let { prefs ->
           val editor = prefs.edit()
           prefs.all.keys.forEach { key ->
-            if (key.startsWith("page_")) {
+            if (key.startsWith("page_") ||
+                key == "last_total_pages") {
               editor.remove(key)
             }
           }
