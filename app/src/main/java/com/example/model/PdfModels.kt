@@ -16,8 +16,8 @@ enum class FitMode(val label: String) {
 }
 
 enum class PageSpacing(val label: String, val dpValue: Int) {
+  COMPACT("Compact (8dp - Default)", 8),
   NORMAL("Normal (16dp)", 16),
-  COMPACT("Compact (8dp)", 8),
   NONE("None (Continuous)", 0)
 }
 
@@ -41,25 +41,10 @@ data class PdfDocument(
   val loadError: String? = null
 )
 
-data class NormalizedRect(
-  val left: Float,
-  val top: Float,
-  val right: Float,
-  val bottom: Float
-)
-
 data class SearchMatch(
   val page: Int,
   val matchIndexOnPage: Int = 1,
-  val snippet: String = "",
-  val bounds: List<NormalizedRect> = emptyList()
-)
-
-data class TextSelectionState(
-  val isOpen: Boolean = false,
-  val page: Int = 1,
-  val text: String = "",
-  val isLoading: Boolean = false
+  val snippet: String = ""
 )
 
 data class SearchState(

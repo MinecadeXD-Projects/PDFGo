@@ -32,7 +32,6 @@ import com.example.ui.PasswordProtectedDialog
 import com.example.ui.ReaderScreen
 import com.example.ui.RemovePdfDialog
 import com.example.ui.SettingsScreen
-import com.example.ui.TextSelectionDialog
 import com.example.ui.ToastPill
 import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.PdfViewModel
@@ -82,6 +81,8 @@ fun PdfGoApp(
   val pageSpacing by viewModel.pageSpacing.collectAsState()
   val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
   val saveReadingPosition by viewModel.saveReadingPosition.collectAsState()
+  val lockZoomIn by viewModel.lockZoomIn.collectAsState()
+  val lockZoomOut by viewModel.lockZoomOut.collectAsState()
   val savedDocumentStatus by viewModel.savedDocumentStatus.collectAsState()
   val isFullscreen by viewModel.isFullscreen.collectAsState()
   val searchState by viewModel.searchState.collectAsState()
@@ -90,9 +91,6 @@ fun PdfGoApp(
   val isExitModalOpen by viewModel.isExitModalOpen.collectAsState()
   val isPasswordModalOpen by viewModel.isPasswordModalOpen.collectAsState()
   val toastMessage by viewModel.toastMessage.collectAsState()
-  val zoomInLocked by viewModel.zoomInLocked.collectAsState()
-  val zoomOutLocked by viewModel.zoomOutLocked.collectAsState()
-  val textSelectionState by viewModel.textSelectionState.collectAsState()
 
   BackHandler {
     val handled = viewModel.handleBack()
@@ -150,8 +148,8 @@ fun PdfGoApp(
                 searchState = searchState,
                 fitMode = fitMode,
                 pageSpacing = pageSpacing,
-                zoomInLocked = zoomInLocked,
-                zoomOutLocked = zoomOutLocked,
+                lockZoomIn = lockZoomIn,
+                lockZoomOut = lockZoomOut,
                 onBack = { viewModel.navigateBackFromReader() },
                 onToggleFullscreen = { viewModel.toggleFullscreen() },
                 onOpenSearch = { viewModel.openSearch() },
@@ -163,11 +161,13 @@ fun PdfGoApp(
                 onOpenRemoveModal = { viewModel.openRemovePdfModal() },
                 onOpenSettings = { viewModel.openSettings(Screen.READER) },
                 onToggleFitMode = { viewModel.toggleFitMode() },
+                onToggleLockZoomIn = { viewModel.toggleLockZoomIn() },
+                onToggleLockZoomOut = { viewModel.toggleLockZoomOut() },
                 onChangePage = { viewModel.changePage(it) },
                 onSetPage = { viewModel.setPage(it) },
                 onAdjustZoom = { viewModel.adjustZoom(it) },
-                onOpenTextSelection = { viewModel.openTextSelection(it) },
                 getPageBitmap = { page, zoom -> viewModel.loadPageBitmap(page, zoom) },
+                onPrefetchPage = { page, zoom -> viewModel.prefetchPage(page, (zoom * 4).toInt().coerceIn(1, 16), zoom) },
               )
             } ?: run {
               HomeScreen(
@@ -189,18 +189,18 @@ fun PdfGoApp(
               currentTheme = themeSetting,
               fitMode = fitMode,
               pageSpacing = pageSpacing,
+              lockZoomIn = lockZoomIn,
+              lockZoomOut = lockZoomOut,
               keepScreenAwake = keepScreenAwake,
               saveReadingPosition = saveReadingPosition,
-              zoomInLocked = zoomInLocked,
-              zoomOutLocked = zoomOutLocked,
               onBack = { viewModel.navigateBackFromSettings() },
               onThemeChange = { viewModel.setTheme(it) },
               onFitModeChange = { viewModel.setFitMode(it) },
               onPageSpacingChange = { viewModel.setPageSpacing(it) },
+              onToggleLockZoomIn = { viewModel.toggleLockZoomIn() },
+              onToggleLockZoomOut = { viewModel.toggleLockZoomOut() },
               onToggleKeepAwake = { viewModel.toggleKeepScreenAwake() },
               onToggleSavePosition = { viewModel.toggleSaveReadingPosition() },
-              onToggleZoomInLocked = { viewModel.toggleZoomInLocked() },
-              onToggleZoomOutLocked = { viewModel.toggleZoomOutLocked() },
             )
           }
         }
@@ -233,18 +233,6 @@ fun PdfGoApp(
         isOpen = isPasswordModalOpen,
         onUnlock = { viewModel.unlockPasswordProtected(it) },
         onDismiss = { viewModel.closePasswordModal() },
-      )
-
-      val context = androidx.compose.ui.platform.LocalContext.current
-      TextSelectionDialog(
-        state = textSelectionState,
-        onDismiss = { viewModel.closeTextSelection() },
-        onCopy = { textToCopy ->
-          val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-          val clip = android.content.ClipData.newPlainText("PDF Page Text", textToCopy)
-          clipboard?.setPrimaryClip(clip)
-          viewModel.showCopyToast()
-        },
       )
 
       // Toast Pills
