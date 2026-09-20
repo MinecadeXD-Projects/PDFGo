@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,6 +62,8 @@ fun SettingsScreen(
   onPageSpacingChange: (PageSpacing) -> Unit,
   onToggleKeepAwake: () -> Unit,
   onToggleSavePosition: () -> Unit,
+  cacheSize: String = "0.0 KB",
+  onClearCache: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val scrollState = rememberScrollState()
@@ -360,7 +364,117 @@ fun SettingsScreen(
         }
       }
 
-      // SECTION 3: ABOUT
+      // SECTION 3: STORAGE & CACHE
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          text = "STORAGE & CACHE",
+          style =
+            MaterialTheme.typography.labelSmall.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 1.2.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontSize = 11.sp,
+            ),
+        )
+
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(16.dp))
+              .background(MaterialTheme.colorScheme.surface)
+              .border(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                RoundedCornerShape(16.dp),
+              )
+              .padding(14.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Text(
+                  text = "PDF Cache Size",
+                  style =
+                    MaterialTheme.typography.bodySmall.copy(
+                      fontWeight = FontWeight.SemiBold,
+                      color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
+                Surface(
+                  shape = RoundedCornerShape(6.dp),
+                  color = MaterialTheme.colorScheme.primaryContainer,
+                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                  Text(
+                    text = cacheSize,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    style =
+                      MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                      ),
+                  )
+                }
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Purge cached PDF files and rendered pages to free up device storage",
+                style =
+                  MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                  ),
+              )
+            }
+
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(8.dp))
+                  .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f))
+                  .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                    RoundedCornerShape(8.dp),
+                  )
+                  .clickable { onClearCache?.invoke() }
+                  .padding(horizontal = 12.dp, vertical = 7.dp)
+                  .testTag("btn_clear_cache"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Delete,
+                  contentDescription = "Clear Cache",
+                  tint = MaterialTheme.colorScheme.error,
+                  modifier = Modifier.size(14.dp),
+                )
+                Text(
+                  text = "Clear",
+                  style =
+                    MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.error,
+                      fontSize = 11.sp,
+                    ),
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // SECTION 4: ABOUT
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
           text = "ABOUT",

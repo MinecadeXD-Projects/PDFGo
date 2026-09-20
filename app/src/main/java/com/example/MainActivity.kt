@@ -87,6 +87,7 @@ fun PdfGoApp(
   val isRemoveModalOpen by viewModel.isRemoveModalOpen.collectAsState()
   val isExitModalOpen by viewModel.isExitModalOpen.collectAsState()
   val isPasswordModalOpen by viewModel.isPasswordModalOpen.collectAsState()
+  val cacheSizeFormatted by viewModel.cacheSizeFormatted.collectAsState()
   val toastMessage by viewModel.toastMessage.collectAsState()
 
   BackHandler {
@@ -186,6 +187,8 @@ fun PdfGoApp(
               onPageSpacingChange = { viewModel.setPageSpacing(it) },
               onToggleKeepAwake = { viewModel.toggleKeepScreenAwake() },
               onToggleSavePosition = { viewModel.toggleSaveReadingPosition() },
+              cacheSize = cacheSizeFormatted,
+              onClearCache = { viewModel.clearAllCache() },
             )
           }
         }

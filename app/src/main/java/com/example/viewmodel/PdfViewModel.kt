@@ -89,6 +89,9 @@ class PdfViewModel(
   private val _saveReadingPosition = MutableStateFlow(true)
   val saveReadingPosition: StateFlow<Boolean> = _saveReadingPosition.asStateFlow()
 
+  private val _cacheSizeFormatted = MutableStateFlow("0.0 KB")
+  val cacheSizeFormatted: StateFlow<String> = _cacheSizeFormatted.asStateFlow()
+
   // Saved Document Status for quick resume
   private val _savedDocumentStatus = MutableStateFlow<SavedDocumentStatus?>(null)
   val savedDocumentStatus: StateFlow<SavedDocumentStatus?> = _savedDocumentStatus.asStateFlow()
@@ -104,6 +107,7 @@ class PdfViewModel(
   init {
     loadSavedSettings()
     loadSavedStatus()
+    updateCacheSize()
   }
 
   private fun loadSavedSettings() {
@@ -175,6 +179,7 @@ class PdfViewModel(
         thumbnailBitmap = thumb
       )
     }
+    clearOrphanedCacheFiles()
   }
 
   private fun persistReadingPosition(
@@ -357,26 +362,40 @@ class PdfViewModel(
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 .build()
 
-              val response = httpClient.newCall(request).execute()
-              if (response.isSuccessful && response.body != null) {
-                val body = response.body!!
-                val totalBytes = body.contentLength()
-                var downloadedBytes = 0L
+              try {
+                val response = httpClient.newCall(request).execute()
+                if (response.isSuccessful && response.body != null) {
+                  val body = response.body!!
+                  val totalBytes = body.contentLength()
+                  var downloadedBytes = 0L
+                  var lastReportedPercent = -1
 
-                body.byteStream().use { input ->
-                  FileOutputStream(localFile).use { output ->
-                    val buffer = ByteArray(8 * 1024)
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                      output.write(buffer, 0, read)
-                      downloadedBytes += read
-                      if (totalBytes > 0) {
-                        val p = 0.25f + (0.5f * (downloadedBytes.toFloat() / totalBytes))
-                        _loadingProgress.value = p.coerceIn(0.25f, 0.75f)
+                  body.byteStream().use { input ->
+                    FileOutputStream(localFile).use { output ->
+                      val buffer = ByteArray(64 * 1024) // 64KB buffer for fast streaming
+                      var read: Int
+                      while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        downloadedBytes += read
+                        if (totalBytes > 0) {
+                          val percent = ((downloadedBytes * 100) / totalBytes).toInt()
+                          if (percent != lastReportedPercent) {
+                            lastReportedPercent = percent
+                            val p = 0.25f + (0.5f * (downloadedBytes.toFloat() / totalBytes))
+                            _loadingProgress.value = p.coerceIn(0.25f, 0.75f)
+                          }
+                        }
                       }
                     }
                   }
+                  if (totalBytes > 0 && downloadedBytes < totalBytes) {
+                    localFile.delete() // Remove incomplete file
+                  }
+                } else {
+                  localFile.delete()
                 }
+              } catch (e: Exception) {
+                localFile.delete()
               }
             }
             _loadingProgress.value = 0.8f
@@ -447,6 +466,7 @@ class PdfViewModel(
       }
 
       _loadingProgress.value = 1.0f
+      updateCacheSize()
       delay(50)
 
       val savedPage = if (_saveReadingPosition.value) {
@@ -528,6 +548,7 @@ class PdfViewModel(
   // Navigation
   fun openSettings(fromScreen: Screen = _currentScreen.value) {
     previousScreenBeforeSettings = if (fromScreen == Screen.SETTINGS) Screen.HOME else fromScreen
+    updateCacheSize()
     _currentScreen.value = Screen.SETTINGS
   }
 
@@ -915,14 +936,94 @@ class PdfViewModel(
       try {
         getThumbnailFile()?.delete()
       } catch (_: Exception) {}
+      try {
+        getPdfFile(currentUrl)?.delete()
+      } catch (_: Exception) {}
     }
+    clearOrphanedCacheFiles()
+    updateCacheSize()
     _savedDocumentStatus.value = null
     _activeDocument.value = null
     _urlInput.value = ""
     _isFullscreen.value = false
     _searchState.value = SearchState()
     _currentScreen.value = Screen.HOME
-    showToast("PDF removed from PDFGo", ToastType.INFO)
+    showToast("PDF removed and cache cleared", ToastType.INFO)
+  }
+
+  fun clearOrphanedCacheFiles() {
+    try {
+      val context = try { getApplication<Application>() } catch (_: Exception) { null } ?: return
+      val activeUrl = _activeDocument.value?.url ?: _savedDocumentStatus.value?.url
+      val activeFile = activeUrl?.let { getPdfFile(it) }
+
+      context.cacheDir?.listFiles()?.forEach { file ->
+        if (file.isFile) {
+          if (file.name.startsWith("pdf_") && file.name.endsWith(".pdf")) {
+            if (activeFile == null || file.absolutePath != activeFile.absolutePath) {
+              file.delete()
+            }
+          } else if (file.name == "resume_thumbnail.png" && activeUrl == null) {
+            file.delete()
+          } else if (file.name.startsWith("temp_") || file.name.endsWith(".tmp")) {
+            file.delete()
+          }
+        }
+      }
+    } catch (_: Exception) {}
+    updateCacheSize()
+  }
+
+  fun clearAllCache() {
+    viewModelScope.launch(ioDispatcher) {
+      closeActiveRenderer()
+      var freedBytes = 0L
+      try {
+        val context = try { getApplication<Application>() } catch (_: Exception) { null }
+        context?.cacheDir?.listFiles()?.forEach { file ->
+          if (file.isFile) {
+            freedBytes += file.length()
+            file.delete()
+          }
+        }
+      } catch (_: Exception) {}
+
+      updateCacheSize()
+
+      val formattedFreed = formatBytes(freedBytes)
+      withContext(Dispatchers.Main) {
+        showToast("Cleared $formattedFreed of cache", ToastType.SUCCESS)
+      }
+    }
+  }
+
+  fun updateCacheSize() {
+    viewModelScope.launch(ioDispatcher) {
+      try {
+        val context = try { getApplication<Application>() } catch (_: Exception) { null }
+        var totalBytes = 0L
+        context?.cacheDir?.listFiles()?.forEach { file ->
+          if (file.isFile) {
+            totalBytes += file.length()
+          }
+        }
+        val formatted = formatBytes(totalBytes)
+        _cacheSizeFormatted.value = formatted
+      } catch (_: Exception) {
+        _cacheSizeFormatted.value = "0.0 KB"
+      }
+    }
+  }
+
+  private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0.0 KB"
+    val kb = bytes / 1024f
+    val mb = kb / 1024f
+    return if (mb >= 1.0f) {
+      String.format(java.util.Locale.US, "%.1f MB", mb)
+    } else {
+      String.format(java.util.Locale.US, "%.1f KB", kb)
+    }
   }
 
   // Exit App
