@@ -394,7 +394,7 @@ fun ReaderScreen(
                   DropdownMenuItem(
                     text = {
                       Text(
-                        text = "Remove PDF from PDFGo",
+                        text = "Remove PDF",
                         color = Rose500,
                         fontWeight = FontWeight.Medium,
                       )
@@ -605,7 +605,10 @@ fun ReaderScreen(
                       didZoom = true
                     }
 
-                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 6f)
+                    val targetScale = zoomScale * zoomChange
+                    val newScale = targetScale.coerceIn(1f, 6f)
+                    val actualZoomChange = if (zoomScale > 0f) newScale / zoomScale else 1f
+
                     if (newScale <= 1.01f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
@@ -616,9 +619,9 @@ fun ReaderScreen(
                       val maxPanX = (size.width * (newScale - 1f)) / 2f
                       val maxPanY = (size.height * (newScale - 1f)) / 2f
 
-                      // Mathematical zoom focus centering (translates pan offset to anchor zoom at gesture centroid)
-                      val newX = (panOffset.x * zoomChange + panChange.x + centroidRelative.x * (1f - zoomChange)).coerceIn(-maxPanX, maxPanX)
-                      val newY = (panOffset.y * zoomChange + panChange.y + centroidRelative.y * (1f - zoomChange)).coerceIn(-maxPanY, maxPanY)
+                      // Mathematical zoom focus centering (translates pan offset to anchor zoom at gesture centroid using actualZoomChange)
+                      val newX = (panOffset.x * actualZoomChange + panChange.x + centroidRelative.x * (1f - actualZoomChange)).coerceIn(-maxPanX, maxPanX)
+                      val newY = (panOffset.y * actualZoomChange + panChange.y + centroidRelative.y * (1f - actualZoomChange)).coerceIn(-maxPanY, maxPanY)
 
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
