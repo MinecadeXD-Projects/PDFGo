@@ -120,10 +120,11 @@ fun LoadingScreen(
         progress = { progress },
         modifier =
           Modifier.fillMaxWidth()
-            .height(6.dp),
+            .height(6.dp)
+            .clip(RoundedCornerShape(50.dp)),
         color = BrandBlue,
         trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-        strokeCap = StrokeCap.Square,
+        strokeCap = StrokeCap.Butt,
       )
 
       Spacer(modifier = Modifier.height(28.dp))

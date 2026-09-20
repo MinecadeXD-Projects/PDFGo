@@ -127,11 +127,11 @@ class PdfViewModel(
       FitMode.FIT_WIDTH
     }
 
-    val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.NORMAL.name)
+    val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.COMPACT.name)
     _pageSpacing.value = try {
-      PageSpacing.valueOf(spacingStr ?: PageSpacing.NORMAL.name)
+      PageSpacing.valueOf(spacingStr ?: PageSpacing.COMPACT.name)
     } catch (_: Exception) {
-      PageSpacing.NORMAL
+      PageSpacing.COMPACT
     }
 
     _keepScreenAwake.value = prefs.getBoolean("pref_keep_screen_awake", true)
@@ -650,10 +650,21 @@ class PdfViewModel(
     startLoadingPdf(saved.url)
   }
 
+  fun setZoomPercent(percent: Int) {
+    val doc = _activeDocument.value ?: return
+    val newZoom = percent.coerceIn(60, 400)
+    if (doc.zoomPercent != newZoom) {
+      synchronized(rendererLock) {
+        pageCache.evictAll()
+      }
+      _activeDocument.value = doc.copy(zoomPercent = newZoom)
+    }
+  }
+
   fun adjustZoom(delta: Int) {
     val doc = _activeDocument.value ?: return
-    val newZoom = (doc.zoomPercent + delta).coerceIn(60, 200)
-    _activeDocument.value = doc.copy(zoomPercent = newZoom)
+    val newZoom = (doc.zoomPercent + delta).coerceIn(60, 400)
+    setZoomPercent(newZoom)
   }
 
   // Search

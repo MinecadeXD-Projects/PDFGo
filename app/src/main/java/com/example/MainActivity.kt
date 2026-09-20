@@ -160,6 +160,7 @@ fun PdfGoApp(
                 onChangePage = { viewModel.changePage(it) },
                 onSetPage = { viewModel.setPage(it) },
                 onAdjustZoom = { viewModel.adjustZoom(it) },
+                onSetZoomPercent = { viewModel.setZoomPercent(it) },
                 getPageBitmap = { viewModel.loadPageBitmap(it) },
               )
             } ?: run {

@@ -134,6 +134,7 @@ fun ReaderScreen(
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
   onAdjustZoom: (Int) -> Unit = {},
+  onSetZoomPercent: (Int) -> Unit = {},
   getPageBitmap: (suspend (Int) -> Bitmap?)? = null,
   modifier: Modifier = Modifier,
 ) {
@@ -572,15 +573,10 @@ fun ReaderScreen(
                   if (zoomScale > 1.05f) {
                     resetZoom()
                   } else {
-                    zoomScale = 2.2f
-                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
-                    val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
-                    val maxPanX = (size.width * 1.2f) / 2f
-                    val maxPanY = (size.height * 1.2f) / 2f
-                    panOffset = Offset(
-                      targetPanX.coerceIn(-maxPanX, maxPanX),
-                      targetPanY.coerceIn(-maxPanY, maxPanY)
-                    )
+                    val targetZoom = (document.zoomPercent * 2.2f).toInt().coerceIn(60, 400)
+                    onSetZoomPercent(targetZoom)
+                    zoomScale = 1f
+                    panOffset = Offset.Zero
                   }
                 }
               )
@@ -597,8 +593,13 @@ fun ReaderScreen(
                     val zoomChange = event.calculateZoom()
                     val panChange = event.calculatePan()
 
-                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
-                    if (newScale <= 1.01f) {
+                    val newScale = (zoomScale * zoomChange).coerceIn(0.5f, 4f)
+                    if (newScale >= 1.35f || newScale <= 0.74f) {
+                      val targetZoom = (document.zoomPercent * newScale).toInt().coerceIn(60, 400)
+                      onSetZoomPercent(targetZoom)
+                      zoomScale = 1f
+                      panOffset = Offset.Zero
+                    } else if (newScale <= 1.01f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
                     } else {
@@ -673,6 +674,7 @@ fun ReaderScreen(
                 PdfPageCard(
                   pageNumber = pageNum,
                   totalPages = document.totalPages,
+                  zoomPercent = document.zoomPercent,
                   preloadedBitmap = document.pageBitmaps.getOrNull(index),
                   getPageBitmap = getPageBitmap,
                   pageIndex = index,
@@ -934,6 +936,7 @@ fun ReaderScreen(
 fun PdfPageCard(
   pageNumber: Int,
   totalPages: Int,
+  zoomPercent: Int = 100,
   preloadedBitmap: Bitmap?,
   getPageBitmap: (suspend (Int) -> Bitmap?)?,
   pageIndex: Int,
@@ -942,17 +945,17 @@ fun PdfPageCard(
   isCurrentMatchPage: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
-  var isLoading by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
+  var bitmap by remember(pageIndex, zoomPercent, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
+  var isLoading by remember(pageIndex, zoomPercent, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
 
-  LaunchedEffect(pageIndex, preloadedBitmap) {
-    if (preloadedBitmap != null) {
-      bitmap = preloadedBitmap
-      isLoading = false
-    } else if (getPageBitmap != null) {
+  LaunchedEffect(pageIndex, zoomPercent) {
+    if (getPageBitmap != null) {
       isLoading = true
       val loaded = getPageBitmap(pageIndex)
       bitmap = loaded
+      isLoading = false
+    } else if (preloadedBitmap != null) {
+      bitmap = preloadedBitmap
       isLoading = false
     }
   }
