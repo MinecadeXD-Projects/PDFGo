@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -270,9 +271,15 @@ fun HomeScreen(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              Box(
+            val thumbnailRatio = savedDocument.thumbnailBitmap?.let {
+              it.width.toFloat() / it.height.toFloat()
+            } ?: 0.707f // Default A4
+
+            Box(
                 modifier =
-                  Modifier.size(width = 38.dp, height = 50.dp)
+                  Modifier
+                    .width(50.dp)
+                    .aspectRatio(thumbnailRatio)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Brush.horizontalGradient(listOf(BrandBlue.copy(alpha = 0.16f), BrandIndigo.copy(alpha = 0.12f))))
                     .border(1.dp, BrandBlue.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
@@ -283,7 +290,7 @@ fun HomeScreen(
                     bitmap = savedDocument.thumbnailBitmap.asImageBitmap(),
                     contentDescription = "Page 1 Thumbnail",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                   )
                 } else {
                   Icon(

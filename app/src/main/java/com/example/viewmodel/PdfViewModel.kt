@@ -989,6 +989,17 @@ class PdfViewModel(
             file.delete()
           }
         }
+        
+        // Remove all saved reading positions
+        sharedPreferences?.let { prefs ->
+          val editor = prefs.edit()
+          prefs.all.keys.forEach { key ->
+            if (key.startsWith("page_")) {
+              editor.remove(key)
+            }
+          }
+          editor.apply()
+        }
       } catch (_: Exception) {}
 
       updateCacheSize()

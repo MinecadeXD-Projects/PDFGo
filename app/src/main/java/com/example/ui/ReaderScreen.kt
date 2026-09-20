@@ -184,10 +184,13 @@ fun ReaderScreen(
       val layoutInfo = lazyListState.layoutInfo
       val visibleItems = layoutInfo.visibleItemsInfo
       if (visibleItems.isNotEmpty()) {
-        val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
-        val mostVisible = visibleItems.minByOrNull { item ->
-          val itemCenter = item.offset + item.size / 2
-          kotlin.math.abs(itemCenter - viewportCenter)
+        val mostVisible = visibleItems.maxByOrNull { item ->
+          val itemTop = item.offset
+          val itemBottom = item.offset + item.size
+          val viewportTop = layoutInfo.viewportStartOffset
+          val viewportBottom = layoutInfo.viewportEndOffset
+          
+          maxOf(0, minOf(itemBottom, viewportBottom) - maxOf(itemTop, viewportTop))
         }
         val calculated = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
         calculated.coerceIn(1, maxOf(1, document.totalPages))
