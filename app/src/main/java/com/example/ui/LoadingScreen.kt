@@ -121,15 +121,21 @@ fun LoadingScreen(
       Spacer(modifier = Modifier.height(24.dp))
 
       // Progress Bar
-      LinearProgressIndicator(
-        progress = { progress },
+      Box(
         modifier =
           Modifier.fillMaxWidth()
             .height(6.dp)
-            .clip(RoundedCornerShape(50.dp)),
-        color = BrandBlue,
-        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-      )
+            .clip(RoundedCornerShape(50.dp))
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth(progress)
+              .height(6.dp)
+              .clip(RoundedCornerShape(50.dp))
+              .background(BrandBlue)
+        )
+      }
 
       Spacer(modifier = Modifier.height(28.dp))
 

@@ -162,10 +162,10 @@ fun ReaderScreen(
 
   // When lockZoomOut is false (default), zoom out below fit-to-width is enabled (down to 0.4x)
   // When lockZoomIn is false (default), zoom in is enabled (up to 4.0x)
-  val minAllowedZoom = if (lockZoomOut) 1.0f else 0.4f
-  val maxAllowedZoom = if (lockZoomIn) 1.0f else 4.0f
+  val minAllowedZoom = 0.4f
+  val maxAllowedZoom = 4.0f
 
-  LaunchedEffect(lockZoomIn, lockZoomOut) {
+  LaunchedEffect(Unit) {
     if (zoomScale < minAllowedZoom) {
       zoomScale = minAllowedZoom
       panOffset = Offset.Zero
@@ -447,43 +447,6 @@ fun ReaderScreen(
                   )
                   DropdownMenuItem(
                     text = {
-                      Text(if (lockZoomIn) "Unlock Zoom In" else "Lock Zoom In (Fit Max)")
-                    },
-                    leadingIcon = {
-                      Icon(
-                        imageVector = if (lockZoomIn) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(18.dp),
-                      )
-                    },
-                    onClick = {
-                      isMenuExpanded = false
-                      onToggleLockZoomIn()
-                    },
-                  )
-                  DropdownMenuItem(
-                    text = {
-                      Text(if (lockZoomOut) "Unlock Zoom Out" else "Lock Zoom Out (Fit Min)")
-                    },
-                    leadingIcon = {
-                      Icon(
-                        imageVector = if (lockZoomOut) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(18.dp),
-                      )
-                    },
-                    onClick = {
-                      isMenuExpanded = false
-                      onToggleLockZoomOut()
-                    },
-                  )
-                  HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                  )
-                  DropdownMenuItem(
-                    text = {
                       Text(
                         text = "Remove PDF from PDFGo",
                         color = Rose500,
@@ -657,12 +620,12 @@ fun ReaderScreen(
           Modifier.weight(1f)
             .fillMaxWidth()
             .clipToBounds()
-            .pointerInput(lockZoomIn, lockZoomOut) {
+            .pointerInput(Unit) {
               detectTapGestures(
                 onDoubleTap = { tapOffset ->
                   if (zoomScale > 1.05f || zoomScale < 0.95f) {
                     resetZoom()
-                  } else if (!lockZoomIn) {
+                  } else {
                     zoomScale = 2.0f
                     val targetPanX = (size.width / 2f - tapOffset.x) * 1.0f
                     val maxPanX = (size.width * 1.0f) / 2f
@@ -674,7 +637,7 @@ fun ReaderScreen(
                 }
               )
             }
-            .pointerInput(lockZoomIn, lockZoomOut) {
+            .pointerInput(Unit) {
               awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false)
                 do {
@@ -1013,55 +976,6 @@ fun ReaderScreen(
             modifier = Modifier.height(20.dp),
             color = Color.White.copy(alpha = 0.25f),
           )
-
-          // Zoom Out Button
-          IconButton(
-            onClick = zoomOutStep,
-            enabled = zoomScale > minAllowedZoom && (!lockZoomOut || zoomScale > 1.05f),
-            modifier = Modifier.size(32.dp).testTag("btn_reader_zoom_out"),
-          ) {
-            Icon(
-              imageVector = Icons.Default.ZoomOut,
-              contentDescription = "Zoom Out",
-              tint = if (zoomScale > minAllowedZoom && (!lockZoomOut || zoomScale > 1.05f)) Color.White else Color.White.copy(alpha = 0.35f),
-              modifier = Modifier.size(16.dp),
-            )
-          }
-
-          // Zoom Percentage / Reset to Fit Width
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color.White.copy(alpha = 0.15f))
-                .clickable(onClick = resetZoom)
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-                .testTag("btn_zoom_fit_width"),
-          ) {
-            Text(
-              text = "${(zoomScale * 100).toInt()}%",
-              style =
-                MaterialTheme.typography.labelMedium.copy(
-                  fontFamily = FontFamily.Monospace,
-                  fontWeight = FontWeight.Bold,
-                  color = if (zoomScale == 1.0f) Emerald400 else Color.White,
-                  fontSize = 11.sp,
-                ),
-            )
-          }
-
-          // Zoom In Button
-          IconButton(
-            onClick = zoomInStep,
-            enabled = zoomScale < maxAllowedZoom && (!lockZoomIn || zoomScale < 0.95f),
-            modifier = Modifier.size(32.dp).testTag("btn_reader_zoom_in"),
-          ) {
-            Icon(
-              imageVector = Icons.Default.ZoomIn,
-              contentDescription = "Zoom In",
-              tint = if (zoomScale < maxAllowedZoom && (!lockZoomIn || zoomScale < 0.95f)) Color.White else Color.White.copy(alpha = 0.35f),
-              modifier = Modifier.size(16.dp),
-            )
-          }
         }
       }
     }
