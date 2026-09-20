@@ -3,6 +3,7 @@ package com.example.ui
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -34,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -115,17 +115,28 @@ fun LoadingScreen(
 
       Spacer(modifier = Modifier.height(24.dp))
 
-      // Progress Bar
-      LinearProgressIndicator(
-        progress = { progress },
+      // Curvey Progress Bar without any trailing dot/square
+      Box(
         modifier =
           Modifier.fillMaxWidth()
             .height(6.dp)
-            .clip(RoundedCornerShape(50.dp)),
-        color = BrandBlue,
-        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-        strokeCap = StrokeCap.Butt,
-      )
+            .clip(RoundedCornerShape(50.dp))
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+      ) {
+        val animatedProgress by animateFloatAsState(
+          targetValue = progress.coerceIn(0f, 1f),
+          label = "progress_anim",
+        )
+        if (animatedProgress > 0f) {
+          Box(
+            modifier =
+              Modifier.fillMaxHeight()
+                .fillMaxWidth(fraction = animatedProgress)
+                .clip(RoundedCornerShape(50.dp))
+                .background(BrandBlue),
+          )
+        }
+      }
 
       Spacer(modifier = Modifier.height(28.dp))
 

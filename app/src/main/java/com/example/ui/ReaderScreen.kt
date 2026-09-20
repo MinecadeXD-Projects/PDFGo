@@ -149,6 +149,7 @@ fun ReaderScreen(
   val resetZoom = {
     zoomScale = 1f
     panOffset = Offset.Zero
+    onSetZoomPercent(100)
   }
 
   // Jump immediately to initial/saved page on document load
@@ -573,10 +574,16 @@ fun ReaderScreen(
                   if (zoomScale > 1.05f) {
                     resetZoom()
                   } else {
-                    val targetZoom = (document.zoomPercent * 2.2f).toInt().coerceIn(60, 400)
-                    onSetZoomPercent(targetZoom)
-                    zoomScale = 1f
-                    panOffset = Offset.Zero
+                    zoomScale = 2.2f
+                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
+                    val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
+                    val maxPanX = (size.width * 1.2f) / 2f
+                    val maxPanY = (size.height * 1.2f) / 2f
+                    panOffset = Offset(
+                      targetPanX.coerceIn(-maxPanX, maxPanX),
+                      targetPanY.coerceIn(-maxPanY, maxPanY),
+                    )
+                    onSetZoomPercent(220)
                   }
                 }
               )
@@ -584,6 +591,9 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false)
+                var didZoom = false
+                val initialZoomScale = zoomScale
+
                 do {
                   val event = awaitPointerEvent()
                   val activePointers = event.changes.filter { it.pressed }
@@ -593,13 +603,12 @@ fun ReaderScreen(
                     val zoomChange = event.calculateZoom()
                     val panChange = event.calculatePan()
 
-                    val newScale = (zoomScale * zoomChange).coerceIn(0.5f, 4f)
-                    if (newScale >= 1.35f || newScale <= 0.74f) {
-                      val targetZoom = (document.zoomPercent * newScale).toInt().coerceIn(60, 400)
-                      onSetZoomPercent(targetZoom)
-                      zoomScale = 1f
-                      panOffset = Offset.Zero
-                    } else if (newScale <= 1.01f) {
+                    if (kotlin.math.abs(zoomChange - 1f) > 0.002f) {
+                      didZoom = true
+                    }
+
+                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
+                    if (newScale <= 1.01f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
                     } else {
@@ -639,6 +648,12 @@ fun ReaderScreen(
                   // When activePointers.size == 1 and zoomScale <= 1.05f:
                   // Nothing is consumed, so single finger vertical scrolling on LazyColumn works seamlessly!
                 } while (event.changes.any { it.pressed })
+
+                // Re-render clear high-res bitmap only when user finishes zooming and removes fingers
+                if (didZoom && kotlin.math.abs(zoomScale - initialZoomScale) > 0.05f) {
+                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(100, 400)
+                  onSetZoomPercent(targetZoomPercent)
+                }
               }
             },
         contentAlignment = Alignment.TopCenter,

@@ -247,9 +247,6 @@ class PdfViewModel(
     val zoom = (doc?.zoomPercent ?: 100) / 100f
 
     synchronized(rendererLock) {
-      // Invalidate cache if zoom is high to ensure high quality on re-render
-      if (zoom > 1.2f) pageCache.evictAll()
-      
       pageCache.get(pageIndex)?.let { return@synchronized it }
       try {
         val page = renderer.openPage(pageIndex)
