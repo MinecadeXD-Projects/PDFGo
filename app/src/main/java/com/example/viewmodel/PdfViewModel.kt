@@ -649,7 +649,7 @@ class PdfViewModel(
 
   fun setZoomPercent(percent: Int) {
     val doc = _activeDocument.value ?: return
-    val newZoom = percent.coerceIn(60, 400)
+    val newZoom = percent.coerceIn(60, 600)
     if (doc.zoomPercent != newZoom) {
       synchronized(rendererLock) {
         pageCache.evictAll()
@@ -660,7 +660,7 @@ class PdfViewModel(
 
   fun adjustZoom(delta: Int) {
     val doc = _activeDocument.value ?: return
-    val newZoom = (doc.zoomPercent + delta).coerceIn(60, 400)
+    val newZoom = (doc.zoomPercent + delta).coerceIn(60, 600)
     setZoomPercent(newZoom)
   }
 

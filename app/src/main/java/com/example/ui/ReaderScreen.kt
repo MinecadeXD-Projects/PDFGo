@@ -607,7 +607,7 @@ fun ReaderScreen(
                       didZoom = true
                     }
 
-                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
+                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 6f)
                     if (newScale <= 1.01f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
@@ -651,7 +651,7 @@ fun ReaderScreen(
 
                 // Re-render clear high-res bitmap only when user finishes zooming and removes fingers
                 if (didZoom && kotlin.math.abs(zoomScale - initialZoomScale) > 0.05f) {
-                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(100, 400)
+                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(100, 600)
                   onSetZoomPercent(targetZoomPercent)
                 }
               }
@@ -960,17 +960,24 @@ fun PdfPageCard(
   isCurrentMatchPage: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  var bitmap by remember(pageIndex, zoomPercent, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
-  var isLoading by remember(pageIndex, zoomPercent, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
+  var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
+  var displayedBitmap by remember(pageIndex) { mutableStateOf(preloadedBitmap) }
+  var isLoading by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
 
   LaunchedEffect(pageIndex, zoomPercent) {
     if (getPageBitmap != null) {
-      isLoading = true
+      if (bitmap == null) {
+        isLoading = true
+      }
       val loaded = getPageBitmap(pageIndex)
-      bitmap = loaded
+      if (loaded != null) {
+        bitmap = loaded
+        displayedBitmap = loaded
+      }
       isLoading = false
     } else if (preloadedBitmap != null) {
       bitmap = preloadedBitmap
+      displayedBitmap = preloadedBitmap
       isLoading = false
     }
   }
@@ -994,18 +1001,18 @@ fun PdfPageCard(
     Box(
       modifier = Modifier
         .fillMaxWidth()
-        .then(if (bitmap == null) Modifier.aspectRatio(0.707f) else Modifier),
+        .then(if (displayedBitmap == null) Modifier.aspectRatio(0.707f) else Modifier),
       contentAlignment = Alignment.Center
     ) {
-      if (bitmap != null) {
+      if (displayedBitmap != null) {
         Image(
-          bitmap = bitmap!!.asImageBitmap(),
+          bitmap = displayedBitmap!!.asImageBitmap(),
           contentDescription = "Page $pageNumber of $totalPages",
           modifier = Modifier.fillMaxWidth(),
           contentScale = ContentScale.FillWidth,
         )
       } else {
-        // Clean placeholder while page renders
+        // Clean placeholder only when no bitmap has ever loaded (initial load)
         Column(
           modifier = Modifier
             .fillMaxSize()
