@@ -183,13 +183,19 @@ fun ReaderScreen(
   // Observe scroll position to update the page counter dynamically as user scrolls
   LaunchedEffect(lazyListState) {
     snapshotFlow {
+      val scale = zoomScale
+      val offset = panOffset
       val layoutInfo = lazyListState.layoutInfo
       val visibleItems = layoutInfo.visibleItemsInfo
       if (visibleItems.isNotEmpty()) {
-        val viewportTop = layoutInfo.viewportStartOffset
-        val viewportBottom = layoutInfo.viewportEndOffset
+        val viewportHeight = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).toFloat()
+        val halfHeight = viewportHeight / 2f
 
-        // Find all pages that are completely visible (fully inside the viewport)
+        // Mathematically calculate the visible layout boundaries under zoom and translation
+        val viewportTop = halfHeight - (halfHeight + offset.y) / scale
+        val viewportBottom = halfHeight + (halfHeight - offset.y) / scale
+
+        // Find all pages that are completely visible (fully inside the zoomed viewport)
         val completelyVisible = visibleItems.filter { item ->
           item.offset >= viewportTop && (item.offset + item.size) <= viewportBottom
         }
@@ -198,7 +204,7 @@ fun ReaderScreen(
         val mostVisible = visibleItems.maxByOrNull { item ->
           val itemTop = item.offset
           val itemBottom = item.offset + item.size
-          maxOf(0, minOf(itemBottom, viewportBottom) - maxOf(itemTop, viewportTop))
+          maxOf(0f, minOf(itemBottom.toFloat(), viewportBottom) - maxOf(itemTop.toFloat(), viewportTop)).toInt()
         }
         val fallbackPage = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
         val coercedFallback = fallbackPage.coerceIn(1, maxOf(1, document.totalPages))

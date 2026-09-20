@@ -991,12 +991,16 @@ class PdfViewModel(
         }
         // Remove all saved reading positions and last document state
         sharedPreferences?.let { prefs ->
+          val lastUrl = prefs.getString("last_url", null)
           val editor = prefs.edit()
           prefs.all.keys.forEach { key ->
             if (key.startsWith("page_") ||
                 key == "last_total_pages") {
               editor.remove(key)
             }
+          }
+          if (lastUrl != null) {
+            editor.putInt("page_$lastUrl", 1)
           }
           editor.apply()
         }
@@ -1006,6 +1010,10 @@ class PdfViewModel(
 
       val formattedFreed = formatBytes(freedBytes)
       withContext(Dispatchers.Main) {
+        val currentSaved = _savedDocumentStatus.value
+        if (currentSaved != null) {
+          _savedDocumentStatus.value = currentSaved.copy(page = 1)
+        }
         showToast("Cleared $formattedFreed of cache", ToastType.SUCCESS)
       }
     }
