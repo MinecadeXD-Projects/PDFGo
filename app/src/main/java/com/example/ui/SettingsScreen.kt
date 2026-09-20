@@ -55,16 +55,12 @@ fun SettingsScreen(
   currentTheme: AppThemeSetting,
   fitMode: FitMode,
   pageSpacing: PageSpacing,
-  lockZoomIn: Boolean = false,
-  lockZoomOut: Boolean = false,
   keepScreenAwake: Boolean,
   saveReadingPosition: Boolean,
   onBack: () -> Unit,
   onThemeChange: (AppThemeSetting) -> Unit,
   onFitModeChange: (FitMode) -> Unit,
   onPageSpacingChange: (PageSpacing) -> Unit,
-  onToggleLockZoomIn: () -> Unit = {},
-  onToggleLockZoomOut: () -> Unit = {},
   onToggleKeepAwake: () -> Unit,
   onToggleSavePosition: () -> Unit,
   modifier: Modifier = Modifier,
@@ -355,88 +351,6 @@ fun SettingsScreen(
                 }
               }
             }
-          }
-
-          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-          // Lock Zoom In
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-              Text(
-                text = "Lock Zoom In",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                  ),
-              )
-              Text(
-                text = if (lockZoomIn) "Locked to fit-to-width max (zooming in disabled)" else "Unlocked (pinch or zoom in up to 400%)",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                  ),
-              )
-            }
-
-            Switch(
-              checked = lockZoomIn,
-              onCheckedChange = { onToggleLockZoomIn() },
-              modifier = Modifier.testTag("switch_lock_zoom_in"),
-              colors =
-                SwitchDefaults.colors(
-                  checkedThumbColor = Color.White,
-                  checkedTrackColor = BrandBlue,
-                ),
-            )
-          }
-
-          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-          // Lock Zoom Out
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-              Text(
-                text = "Lock Zoom Out",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                  ),
-              )
-              Text(
-                text = if (lockZoomOut) "Locked to fit-to-width min (zooming out disabled)" else "Unlocked (zooming out below fit-to-width allowed down to 40%)",
-                style =
-                  MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                  ),
-              )
-            }
-
-            Switch(
-              checked = lockZoomOut,
-              onCheckedChange = { onToggleLockZoomOut() },
-              modifier = Modifier.testTag("switch_lock_zoom_out"),
-              colors =
-                SwitchDefaults.colors(
-                  checkedThumbColor = Color.White,
-                  checkedTrackColor = BrandBlue,
-                ),
-            )
           }
 
           HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))

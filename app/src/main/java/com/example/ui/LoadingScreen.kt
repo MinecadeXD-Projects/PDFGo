@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,12 +79,6 @@ fun LoadingScreen(
         contentAlignment = Alignment.Center,
       ) {
         CircularProgressIndicator(
-          progress = { 1f },
-          modifier = Modifier.fillMaxSize(),
-          color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-          strokeWidth = 4.dp,
-        )
-        CircularProgressIndicator(
           modifier = Modifier.fillMaxSize().rotate(rotation),
           color = BrandBlue,
           strokeWidth = 4.dp,
@@ -121,21 +116,15 @@ fun LoadingScreen(
       Spacer(modifier = Modifier.height(24.dp))
 
       // Progress Bar
-      Box(
+      LinearProgressIndicator(
+        progress = { progress },
         modifier =
           Modifier.fillMaxWidth()
-            .height(6.dp)
-            .clip(RoundedCornerShape(50.dp))
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth(progress)
-              .height(6.dp)
-              .clip(RoundedCornerShape(50.dp))
-              .background(BrandBlue)
-        )
-      }
+            .height(6.dp),
+        color = BrandBlue,
+        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+        strokeCap = StrokeCap.Square,
+      )
 
       Spacer(modifier = Modifier.height(28.dp))
 

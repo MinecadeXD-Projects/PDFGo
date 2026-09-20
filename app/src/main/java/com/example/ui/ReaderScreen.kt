@@ -16,7 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,15 +41,11 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NavigateBefore
 import androidx.compose.material.icons.filled.NavigateNext
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -95,12 +89,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -118,7 +110,6 @@ import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import java.net.URLEncoder
-import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -129,8 +120,6 @@ fun ReaderScreen(
   searchState: SearchState,
   fitMode: FitMode,
   pageSpacing: PageSpacing,
-  lockZoomIn: Boolean = false,
-  lockZoomOut: Boolean = false,
   onBack: () -> Unit,
   onToggleFullscreen: () -> Unit,
   onOpenSearch: () -> Unit,
@@ -142,13 +131,10 @@ fun ReaderScreen(
   onOpenRemoveModal: () -> Unit,
   onOpenSettings: () -> Unit,
   onToggleFitMode: () -> Unit,
-  onToggleLockZoomIn: () -> Unit = {},
-  onToggleLockZoomOut: () -> Unit = {},
   onChangePage: (Int) -> Unit,
   onSetPage: (Int) -> Unit,
   onAdjustZoom: (Int) -> Unit = {},
-  getPageBitmap: (suspend (Int, Float) -> Bitmap?)? = null,
-  onPrefetchPage: ((Int, Float) -> Unit)? = null,
+  getPageBitmap: (suspend (Int) -> Bitmap?)? = null,
   modifier: Modifier = Modifier,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
@@ -156,52 +142,12 @@ fun ReaderScreen(
   val coroutineScope = rememberCoroutineScope()
 
   // Two-finger pinch to zoom & pan state
-  // By default zoom fits page to width (1.0f)
   var zoomScale by remember { mutableFloatStateOf(1f) }
   var panOffset by remember { mutableStateOf(Offset.Zero) }
-
-  // When lockZoomOut is false (default), zoom out below fit-to-width is enabled (down to 0.4x)
-  // When lockZoomIn is false (default), zoom in is enabled (up to 4.0x)
-  val minAllowedZoom = 0.4f
-  val maxAllowedZoom = 4.0f
-
-  LaunchedEffect(Unit) {
-    if (zoomScale < minAllowedZoom) {
-      zoomScale = minAllowedZoom
-      panOffset = Offset.Zero
-    } else if (zoomScale > maxAllowedZoom) {
-      zoomScale = maxAllowedZoom
-    }
-  }
 
   val resetZoom = {
     zoomScale = 1f
     panOffset = Offset.Zero
-  }
-
-  val zoomInStep = {
-    if (zoomScale < maxAllowedZoom) {
-      val target = (zoomScale + 0.25f).coerceAtMost(maxAllowedZoom)
-      zoomScale = target
-    }
-  }
-
-  val zoomOutStep = {
-    if (zoomScale > minAllowedZoom) {
-      val target = (zoomScale - 0.25f).coerceAtLeast(minAllowedZoom)
-      zoomScale = target
-      if (zoomScale <= 1.05f) {
-        panOffset = Offset.Zero
-      }
-    }
-  }
-
-  // Prefetch adjacent pages as user scrolls for instant loading
-  LaunchedEffect(lazyListState.firstVisibleItemIndex, zoomScale) {
-    val idx = lazyListState.firstVisibleItemIndex
-    onPrefetchPage?.invoke(idx - 1, zoomScale)
-    onPrefetchPage?.invoke(idx + 1, zoomScale)
-    onPrefetchPage?.invoke(idx + 2, zoomScale)
   }
 
   // Jump immediately to initial/saved page on document load
@@ -615,7 +561,7 @@ fun ReaderScreen(
       // Main PDF Viewport (Render the user's actual document with two-finger pinch-to-zoom and pan)
       val pageGap = pageSpacing.dpValue.dp
 
-      BoxWithConstraints(
+      Box(
         modifier =
           Modifier.weight(1f)
             .fillMaxWidth()
@@ -623,15 +569,17 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               detectTapGestures(
                 onDoubleTap = { tapOffset ->
-                  if (zoomScale > 1.05f || zoomScale < 0.95f) {
+                  if (zoomScale > 1.05f) {
                     resetZoom()
                   } else {
-                    zoomScale = 2.0f
-                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.0f
-                    val maxPanX = (size.width * 1.0f) / 2f
+                    zoomScale = 2.2f
+                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
+                    val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
+                    val maxPanX = (size.width * 1.2f) / 2f
+                    val maxPanY = (size.height * 1.2f) / 2f
                     panOffset = Offset(
                       targetPanX.coerceIn(-maxPanX, maxPanX),
-                      0f
+                      targetPanY.coerceIn(-maxPanY, maxPanY)
                     )
                   }
                 }
@@ -645,57 +593,67 @@ fun ReaderScreen(
                   val activePointers = event.changes.filter { it.pressed }
 
                   if (activePointers.size >= 2) {
-                    // Two fingers: fluid pinch-to-zoom & horizontal pan
+                    // Two fingers: fluid pinch-to-zoom & pan across the document
                     val zoomChange = event.calculateZoom()
                     val panChange = event.calculatePan()
 
-                    val rawNewScale = zoomScale * zoomChange
-                    val newScale = rawNewScale.coerceIn(minAllowedZoom, maxAllowedZoom)
-
-                    if (kotlin.math.abs(newScale - 1f) < 0.03f) {
+                    val newScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
+                    if (newScale <= 1.01f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
                     } else {
-                      zoomScale = newScale
-                      val maxPanX = if (zoomScale > 1f) ((size.width * (zoomScale - 1f)) / 2f) else 0f
+                      val maxPanX = (size.width * (newScale - 1f)) / 2f
+                      val maxPanY = (size.height * (newScale - 1f)) / 2f
                       val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
-                      panOffset = Offset(newX, 0f)
+                      val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+                      zoomScale = newScale
+                      panOffset = Offset(newX, newY)
                     }
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
                     }
                   } else if (activePointers.size == 1 && zoomScale > 1.05f) {
-                    // One finger when zoomed in: pan horizontally across page and scroll vertically
+                    // One finger when zoomed in: pan horizontally and vertically, allowing vertical scroll across pages
                     val panChange = event.calculatePan()
                     val maxPanX = (size.width * (zoomScale - 1f)) / 2f
+                    val maxPanY = (size.height * (zoomScale - 1f)) / 2f
                     val newX = (panOffset.x + panChange.x).coerceIn(-maxPanX, maxPanX)
-                    val verticalPan = panChange.y
-                    panOffset = Offset(newX, 0f)
+                    val newY = (panOffset.y + panChange.y).coerceIn(-maxPanY, maxPanY)
+                    
+                    val verticalRemainder = (panOffset.y + panChange.y) - newY
+                    panOffset = Offset(newX, newY)
 
-                    if (kotlin.math.abs(verticalPan) > 0.5f) {
+                    // If at vertical pan boundary, dispatch remainder to LazyColumn
+                    if (kotlin.math.abs(verticalRemainder) > 0.5f) {
                       coroutineScope.launch {
-                        lazyListState.scrollBy(-verticalPan)
+                        lazyListState.scrollBy(-verticalRemainder)
                       }
                     }
 
+                    // Always consume horizontal movement so page horizontal pan is smooth
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
                     }
                   }
+                  // When activePointers.size == 1 and zoomScale <= 1.05f:
+                  // Nothing is consumed, so single finger vertical scrolling on LazyColumn works seamlessly!
                 } while (event.changes.any { it.pressed })
               }
             },
         contentAlignment = Alignment.TopCenter,
       ) {
-        val viewportWidth = maxWidth
-        val baseWidth = (viewportWidth - 24.dp).coerceAtLeast(200.dp)
-        val effectiveWidth = (baseWidth * zoomScale).coerceAtLeast(160.dp)
-
         Box(
-          modifier = Modifier.fillMaxSize()
+          modifier =
+            Modifier.fillMaxSize()
+              .graphicsLayer {
+                scaleX = zoomScale
+                scaleY = zoomScale
+                translationX = panOffset.x
+                translationY = panOffset.y
+              }
         ) {
           if (document.totalPages > 0 && !document.useWebViewFallback) {
-            // Native PdfRenderer pages from user's PDF (rendered dynamically on-demand and sharp at any zoom level)
+            // Native PdfRenderer pages from user's PDF (all pages rendered dynamically on-demand)
             LazyColumn(
               state = lazyListState,
               modifier = Modifier.fillMaxSize(),
@@ -719,12 +677,8 @@ fun ReaderScreen(
                   getPageBitmap = getPageBitmap,
                   pageIndex = index,
                   fitMode = fitMode,
-                  zoomScale = zoomScale,
                   isMatchedPage = isMatchedPage,
                   isCurrentMatchPage = isCurrentMatchPage,
-                  modifier = Modifier
-                    .width(effectiveWidth)
-                    .offset { IntOffset(panOffset.x.roundToInt(), 0) },
                 )
               }
             }
@@ -803,12 +757,12 @@ fun ReaderScreen(
           }
         }
 
-        // Floating Reset Zoom Pill at Top Right when zoomed in or out
-        if (zoomScale > 1.05f || zoomScale < 0.95f) {
+        // Floating Reset Zoom Pill at Top Right when zoomed in
+        if (zoomScale > 1.05f) {
           Surface(
             onClick = resetZoom,
             shape = RoundedCornerShape(50.dp),
-            color = Slate900.copy(alpha = 0.92f),
+            color = Slate900.copy(alpha = 0.9f),
             contentColor = Color.White,
             shadowElevation = 6.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
@@ -830,12 +784,11 @@ fun ReaderScreen(
                   ),
               )
               Text(
-                text = "Fit Width",
+                text = "Tap to reset",
                 style =
                   MaterialTheme.typography.labelSmall.copy(
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = Color.White.copy(alpha = 0.85f),
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
                   ),
               )
             }
@@ -971,11 +924,6 @@ fun ReaderScreen(
               modifier = Modifier.size(16.dp),
             )
           }
-
-          VerticalDivider(
-            modifier = Modifier.height(20.dp),
-            color = Color.White.copy(alpha = 0.25f),
-          )
         }
       }
     }
@@ -987,32 +935,24 @@ fun PdfPageCard(
   pageNumber: Int,
   totalPages: Int,
   preloadedBitmap: Bitmap?,
-  getPageBitmap: (suspend (Int, Float) -> Bitmap?)?,
+  getPageBitmap: (suspend (Int) -> Bitmap?)?,
   pageIndex: Int,
   fitMode: FitMode,
-  zoomScale: Float,
   isMatchedPage: Boolean,
   isCurrentMatchPage: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  var bitmap by remember(pageIndex) { mutableStateOf(preloadedBitmap) }
-  var isLoading by remember(pageIndex) { mutableStateOf(preloadedBitmap == null) }
+  var bitmap by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap) }
+  var isLoading by remember(pageIndex, preloadedBitmap) { mutableStateOf(preloadedBitmap == null) }
 
-  // Re-render when zooming into new resolution tier: 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, etc.
-  val zoomTier = remember(zoomScale) {
-    (zoomScale * 4).roundToInt().coerceIn(1, 16)
-  }
-
-  LaunchedEffect(pageIndex, zoomTier) {
-    if (getPageBitmap != null) {
-      if (bitmap == null) isLoading = true
-      val loaded = getPageBitmap(pageIndex, zoomScale)
-      if (loaded != null) {
-        bitmap = loaded
-      }
-      isLoading = false
-    } else if (preloadedBitmap != null && bitmap == null) {
+  LaunchedEffect(pageIndex, preloadedBitmap) {
+    if (preloadedBitmap != null) {
       bitmap = preloadedBitmap
+      isLoading = false
+    } else if (getPageBitmap != null) {
+      isLoading = true
+      val loaded = getPageBitmap(pageIndex)
+      bitmap = loaded
       isLoading = false
     }
   }
@@ -1029,6 +969,7 @@ fun PdfPageCard(
     colors = CardDefaults.cardColors(containerColor = Color.White),
     elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
     modifier = modifier
+      .widthIn(max = if (fitMode == FitMode.FIT_WIDTH) 680.dp else 460.dp)
       .fillMaxWidth()
       .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
   ) {

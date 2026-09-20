@@ -65,7 +65,7 @@ class PdfViewModel(
   private var activePfd: ParcelFileDescriptor? = null
   private var activeRenderer: PdfRenderer? = null
   private val rendererLock = Any()
-  private val pageCache = object : LruCache<String, Bitmap>(36) {}
+  private val pageCache = object : LruCache<Int, Bitmap>(24) {}
 
   // Starts completely empty - no pre-filled sample PDF!
   private val _urlInput = MutableStateFlow("")
@@ -84,16 +84,8 @@ class PdfViewModel(
   private val _fitMode = MutableStateFlow(FitMode.FIT_WIDTH)
   val fitMode: StateFlow<FitMode> = _fitMode.asStateFlow()
 
-  // Page spacing: 8dp (COMPACT) is default as requested
   private val _pageSpacing = MutableStateFlow(PageSpacing.COMPACT)
   val pageSpacing: StateFlow<PageSpacing> = _pageSpacing.asStateFlow()
-
-  // Zoom locking settings: by default, unlocked (zoom in up to 400%, zoom out below fit-to-width down to 40%)
-  private val _lockZoomIn = MutableStateFlow(false)
-  val lockZoomIn: StateFlow<Boolean> = _lockZoomIn.asStateFlow()
-
-  private val _lockZoomOut = MutableStateFlow(false)
-  val lockZoomOut: StateFlow<Boolean> = _lockZoomOut.asStateFlow()
 
   private val _keepScreenAwake = MutableStateFlow(true)
   val keepScreenAwake: StateFlow<Boolean> = _keepScreenAwake.asStateFlow()
@@ -135,15 +127,12 @@ class PdfViewModel(
       FitMode.FIT_WIDTH
     }
 
-    val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.COMPACT.name)
+    val spacingStr = prefs.getString("pref_page_spacing", PageSpacing.NORMAL.name)
     _pageSpacing.value = try {
-      PageSpacing.valueOf(spacingStr ?: PageSpacing.COMPACT.name)
+      PageSpacing.valueOf(spacingStr ?: PageSpacing.NORMAL.name)
     } catch (_: Exception) {
-      PageSpacing.COMPACT
+      PageSpacing.NORMAL
     }
-
-    _lockZoomIn.value = prefs.getBoolean("pref_lock_zoom_in", false)
-    _lockZoomOut.value = prefs.getBoolean("pref_lock_zoom_out", false)
 
     _keepScreenAwake.value = prefs.getBoolean("pref_keep_screen_awake", true)
     _saveReadingPosition.value = prefs.getBoolean("pref_save_reading_position", true)
@@ -249,92 +238,33 @@ class PdfViewModel(
   private var downloadJob: Job? = null
   private var searchJob: Job? = null
 
-  private fun getPdfCacheDir(): File? {
-    return try {
-      val context = getApplication<Application>()
-      val dir = File(context.cacheDir, "pdf_cache")
-      if (!dir.exists()) dir.mkdirs()
-      dir
-    } catch (_: Exception) {
-      null
-    }
-  }
-
-  private fun getCachedPdfFile(url: String): File? {
-    val dir = getPdfCacheDir() ?: return null
-    val safeHash = url.hashCode().toUInt().toString(16)
-    val safeFilename = extractFilename(url).take(32).replace(Regex("[^a-zA-Z0-9._-]"), "_")
-    return File(dir, "pdf_${safeHash}_$safeFilename")
-  }
-
-  suspend fun loadPageBitmap(pageIndex: Int, zoomScale: Float = 1.0f): Bitmap? = withContext(ioDispatcher) {
+  suspend fun loadPageBitmap(pageIndex: Int): Bitmap? = withContext(ioDispatcher) {
     val doc = _activeDocument.value
     val total = doc?.totalPages ?: 0
     if (pageIndex !in 0 until total) return@withContext null
 
-    val tier = (zoomScale * 4).toInt().coerceIn(1, 16)
-    val key = "${pageIndex}_$tier"
-    pageCache.get(key)?.let { return@withContext it }
-
     val renderer = activeRenderer ?: return@withContext null
+    val zoom = (doc?.zoomPercent ?: 100) / 100f
 
-    val bmp = synchronized(rendererLock) {
-      pageCache.get(key)?.let { return@synchronized it }
+    synchronized(rendererLock) {
+      // Invalidate cache if zoom is high to ensure high quality on re-render
+      if (zoom > 1.2f) pageCache.evictAll()
+      
+      pageCache.get(pageIndex)?.let { return@synchronized it }
       try {
         val page = renderer.openPage(pageIndex)
-        val context = try { getApplication<Application>() } catch (_: Exception) { null }
-        val displayMetrics = context?.resources?.displayMetrics
-        val screenWidthPx = displayMetrics?.widthPixels?.coerceAtLeast(720) ?: 1080
-        val targetW = (screenWidthPx * zoomScale).toInt().coerceIn(360, 3840)
-        val scale = targetW.toFloat() / page.width.coerceAtLeast(1).toFloat()
-        val bmpW = targetW
-        val bmpH = (page.height * scale).toInt().coerceIn(300, 8000)
-        val newBmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-        newBmp.eraseColor(android.graphics.Color.WHITE)
-        page.render(newBmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        // Apply zoom to scale
+        val scale = (1080f / page.width.coerceAtLeast(100)) * zoom
+        val bmpW = (page.width * scale).toInt().coerceAtLeast(300)
+        val bmpH = (page.height * scale).toInt().coerceAtLeast(400)
+        val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(android.graphics.Color.WHITE)
+        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
         page.close()
-        pageCache.put(key, newBmp)
-        newBmp
+        pageCache.put(pageIndex, bmp)
+        bmp
       } catch (_: Exception) {
         null
-      }
-    }
-
-    if (bmp != null) {
-      prefetchPage(pageIndex + 1, tier, zoomScale)
-      if (pageIndex > 0) {
-        prefetchPage(pageIndex - 1, tier, zoomScale)
-      }
-    }
-
-    bmp ?: pageCache.get("${pageIndex}_4")
-  }
-
-  fun prefetchPage(pageIndex: Int, tier: Int, zoomScale: Float) {
-    val doc = _activeDocument.value ?: return
-    if (pageIndex !in 0 until doc.totalPages) return
-    val key = "${pageIndex}_$tier"
-    if (pageCache.get(key) != null) return
-
-    viewModelScope.launch(ioDispatcher) {
-      val renderer = activeRenderer ?: return@launch
-      synchronized(rendererLock) {
-        if (pageCache.get(key) != null) return@synchronized
-        try {
-          val page = renderer.openPage(pageIndex)
-          val context = try { getApplication<Application>() } catch (_: Exception) { null }
-          val displayMetrics = context?.resources?.displayMetrics
-          val screenWidthPx = displayMetrics?.widthPixels?.coerceAtLeast(720) ?: 1080
-          val targetW = (screenWidthPx * zoomScale).toInt().coerceIn(360, 3840)
-          val scale = targetW.toFloat() / page.width.coerceAtLeast(1).toFloat()
-          val bmpW = targetW
-          val bmpH = (page.height * scale).toInt().coerceIn(300, 8000)
-          val newBmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-          newBmp.eraseColor(android.graphics.Color.WHITE)
-          page.render(newBmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-          page.close()
-          pageCache.put(key, newBmp)
-        } catch (_: Exception) {}
       }
     }
   }
@@ -388,6 +318,17 @@ class PdfViewModel(
     startLoadingPdf(raw)
   }
 
+  private fun getPdfFile(url: String): File? {
+    return try {
+      val context = getApplication<Application>()
+      // Use URL hashCode as a simple unique filename
+      val filename = "pdf_" + url.hashCode().toString() + ".pdf"
+      File(context.cacheDir, filename)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
   private fun startLoadingPdf(url: String) {
     _currentScreen.value = Screen.LOADING
     _loadingProgress.value = 0.1f
@@ -413,186 +354,113 @@ class PdfViewModel(
         return@launch
       }
 
-      val cachedFile = getCachedPdfFile(url)
+      val localFile = getPdfFile(url)
       var isPdfRendered = false
-      var loadedFromCache = false
       val pageBitmaps = mutableListOf<Bitmap>()
       var totalPageCount = 1
 
       withContext(ioDispatcher) {
-        // 1. FAST CACHE CHECK: If PDF was already downloaded and cached, open immediately!
-        if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
-          try {
-            _loadingProgress.value = 0.5f
-            closeActiveRenderer()
-            val pfd = ParcelFileDescriptor.open(cachedFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            activePfd = pfd
-            activeRenderer = renderer
-            totalPageCount = renderer.pageCount
+        try {
+          if (localFile != null) {
+            // Check if file exists, if not, download it
+            if (!localFile.exists()) {
+              _loadingProgress.value = 0.25f
+              val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .build()
 
-            val savedPage = if (_saveReadingPosition.value) {
-              sharedPreferences?.getInt("page_$url", 1) ?: 1
-            } else 1
-            val initialPage = savedPage.coerceIn(1, totalPageCount)
-            val initialIndex = initialPage - 1
+              val response = httpClient.newCall(request).execute()
+              if (response.isSuccessful && response.body != null) {
+                val body = response.body!!
+                val totalBytes = body.contentLength()
+                var downloadedBytes = 0L
 
-            // Render only initial page on startup for instant display
-            val initialBmp = synchronized(rendererLock) {
-              val page = renderer.openPage(initialIndex)
-              val displayMetrics = context.resources.displayMetrics
-              val screenWidthPx = displayMetrics.widthPixels.coerceAtLeast(720)
-              val targetW = screenWidthPx.coerceIn(360, 3840)
-              val scale = targetW.toFloat() / page.width.coerceAtLeast(1).toFloat()
-              val bmpW = targetW
-              val bmpH = (page.height * scale).toInt().coerceIn(300, 8000)
-              val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-              bmp.eraseColor(android.graphics.Color.WHITE)
-              page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-              page.close()
-              pageCache.put("${initialIndex}_4", bmp)
-              bmp
-            }
-
-            if (initialBmp != null) {
-              pageBitmaps.add(initialBmp)
-            }
-
-            if (initialIndex != 0) {
-              synchronized(rendererLock) {
-                try {
-                  val p0 = renderer.openPage(0)
-                  val displayMetrics = context.resources.displayMetrics
-                  val screenWidthPx = displayMetrics.widthPixels.coerceAtLeast(720)
-                  val targetW = screenWidthPx.coerceIn(360, 3840)
-                  val scale = targetW.toFloat() / p0.width.coerceAtLeast(1).toFloat()
-                  val bmpW = targetW
-                  val bmpH = (p0.height * scale).toInt().coerceIn(300, 8000)
-                  val bmp0 = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-                  bmp0.eraseColor(android.graphics.Color.WHITE)
-                  p0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                  p0.close()
-                  pageCache.put("0_4", bmp0)
-                } catch (_: Exception) {}
-              }
-            }
-
-            _loadingProgress.value = 1.0f
-            isPdfRendered = true
-            loadedFromCache = true
-          } catch (renderEx: Exception) {
-            isPdfRendered = false
-          }
-        }
-
-        // 2. NETWORK DOWNLOAD (if not in cache): Save to cache file for future instant opens
-        if (!isPdfRendered && cachedFile != null) {
-          try {
-            _loadingProgress.value = 0.2f
-            val tempFile = File(cachedFile.parentFile, "temp_${System.currentTimeMillis()}.tmp")
-            val request = Request.Builder()
-              .url(url)
-              .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-              .build()
-
-            val response = httpClient.newCall(request).execute()
-            if (response.isSuccessful && response.body != null) {
-              val body = response.body!!
-              val totalBytes = body.contentLength()
-              var downloadedBytes = 0L
-
-              body.byteStream().use { input ->
-                FileOutputStream(tempFile).use { output ->
-                  val buffer = ByteArray(8 * 1024)
-                  var read: Int
-                  while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                    downloadedBytes += read
-                    if (totalBytes > 0) {
-                      val p = 0.2f + (0.6f * (downloadedBytes.toFloat() / totalBytes))
-                      _loadingProgress.value = p.coerceIn(0.2f, 0.8f)
+                body.byteStream().use { input ->
+                  FileOutputStream(localFile).use { output ->
+                    val buffer = ByteArray(8 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                      output.write(buffer, 0, read)
+                      downloadedBytes += read
+                      if (totalBytes > 0) {
+                        val p = 0.25f + (0.5f * (downloadedBytes.toFloat() / totalBytes))
+                        _loadingProgress.value = p.coerceIn(0.25f, 0.75f)
+                      }
                     }
                   }
                 }
               }
-              _loadingProgress.value = 0.85f
+            }
+            _loadingProgress.value = 0.8f
 
-              // Atomically move temp file to persistent cache file
-              if (tempFile.exists() && tempFile.length() > 0) {
-                if (cachedFile.exists()) cachedFile.delete()
-                tempFile.renameTo(cachedFile)
-              }
+            // Attempt to render with Android's native PdfRenderer
+            if (localFile.exists() && localFile.length() > 0) {
+              try {
+                closeActiveRenderer()
+                val pfd = ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(pfd)
+                activePfd = pfd
+                activeRenderer = renderer
+                totalPageCount = renderer.pageCount
 
-              if (cachedFile.exists() && cachedFile.length() > 0) {
-                try {
-                  closeActiveRenderer()
-                  val pfd = ParcelFileDescriptor.open(cachedFile, ParcelFileDescriptor.MODE_READ_ONLY)
-                  val renderer = PdfRenderer(pfd)
-                  activePfd = pfd
-                  activeRenderer = renderer
-                  totalPageCount = renderer.pageCount
+                val savedPage = if (_saveReadingPosition.value) {
+                  sharedPreferences?.getInt("page_$url", 1) ?: 1
+                } else 1
+                val initialPage = savedPage.coerceIn(1, totalPageCount)
+                val initialIndex = initialPage - 1
 
-                  val savedPage = if (_saveReadingPosition.value) {
-                    sharedPreferences?.getInt("page_$url", 1) ?: 1
-                  } else 1
-                  val initialPage = savedPage.coerceIn(1, totalPageCount)
-                  val initialIndex = initialPage - 1
-
-                  // Render only the starting page so it opens immediately without blocking on all pages
-                  val initialBmp = synchronized(rendererLock) {
-                    val page = renderer.openPage(initialIndex)
-                    val displayMetrics = context.resources.displayMetrics
-                    val screenWidthPx = displayMetrics.widthPixels.coerceAtLeast(720)
-                    val targetW = screenWidthPx.coerceIn(360, 3840)
-                    val scale = targetW.toFloat() / page.width.coerceAtLeast(1).toFloat()
-                    val bmpW = targetW
-                    val bmpH = (page.height * scale).toInt().coerceIn(300, 8000)
-                    val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-                    bmp.eraseColor(android.graphics.Color.WHITE)
-                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    page.close()
-                    pageCache.put("${initialIndex}_4", bmp)
-                    bmp
-                  }
-
-                  if (initialBmp != null) {
-                    pageBitmaps.add(initialBmp)
-                  }
-
-                  if (initialIndex != 0) {
-                    synchronized(rendererLock) {
-                      try {
-                        val p0 = renderer.openPage(0)
-                        val displayMetrics = context.resources.displayMetrics
-                        val screenWidthPx = displayMetrics.widthPixels.coerceAtLeast(720)
-                        val targetW = screenWidthPx.coerceIn(360, 3840)
-                        val scale = targetW.toFloat() / p0.width.coerceAtLeast(1).toFloat()
-                        val bmpW = targetW
-                        val bmpH = (p0.height * scale).toInt().coerceIn(300, 8000)
-                        val bmp0 = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-                        bmp0.eraseColor(android.graphics.Color.WHITE)
-                        p0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        p0.close()
-                        pageCache.put("0_4", bmp0)
-                      } catch (_: Exception) {}
-                    }
-                  }
-
-                  _loadingProgress.value = 1.0f
-                  isPdfRendered = true
-                } catch (renderEx: Exception) {
-                  isPdfRendered = false
+                // Pre-render the starting page so it displays instantaneously
+                val initialBmp = synchronized(rendererLock) {
+                  val page = renderer.openPage(initialIndex)
+                  val scale = (1080f / page.width.coerceAtLeast(100)).coerceIn(1.2f, 2.5f)
+                  val bmpW = (page.width * scale).toInt().coerceAtLeast(300)
+                  val bmpH = (page.height * scale).toInt().coerceAtLeast(400)
+                  val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                  bmp.eraseColor(android.graphics.Color.WHITE)
+                  page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                  page.close()
+                  pageCache.put(initialIndex, bmp)
+                  bmp
                 }
+
+                if (initialBmp != null) {
+                  pageBitmaps.add(initialBmp)
+                }
+
+                // If resuming at a page > 1, also cache page 0 for thumbnail
+                if (initialIndex != 0) {
+                  synchronized(rendererLock) {
+                    try {
+                      val p0 = renderer.openPage(0)
+                      val scale = (1080f / p0.width.coerceAtLeast(100)).coerceIn(1.2f, 2.5f)
+                      val bmpW = (p0.width * scale).toInt().coerceAtLeast(300)
+                      val bmpH = (p0.height * scale).toInt().coerceAtLeast(400)
+                      val bmp0 = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                      bmp0.eraseColor(android.graphics.Color.WHITE)
+                      p0.render(bmp0, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                      p0.close()
+                      pageCache.put(0, bmp0)
+                    } catch (_: Exception) {}
+                  }
+                }
+
+                _loadingProgress.value = 1.0f
+                isPdfRendered = true
+              } catch (renderEx: Exception) {
+                // Not standard PDF bytes, or renderer exception
+                isPdfRendered = false
               }
             }
-          } catch (ex: Exception) {
-            isPdfRendered = false
           }
+        } catch (ex: Exception) {
+          // Network error
+          isPdfRendered = false
         }
       }
 
       _loadingProgress.value = 1.0f
-      delay(30)
+      delay(50)
 
       val savedPage = if (_saveReadingPosition.value) {
         sharedPreferences?.getInt("page_$url", 1) ?: 1
@@ -603,7 +471,7 @@ class PdfViewModel(
         _activeDocument.value = PdfDocument(
           url = url,
           title = filename,
-          localFilePath = cachedFile?.absolutePath,
+          localFilePath = localFile?.absolutePath,
           totalPages = totalPageCount,
           currentPage = initialPage,
           zoomPercent = 100,
@@ -611,24 +479,22 @@ class PdfViewModel(
           useWebViewFallback = false
         )
         _currentScreen.value = Screen.READER
-        val firstPageBmp = pageCache.get("0_4") ?: pageBitmaps.firstOrNull()
+        val firstPageBmp = pageCache.get(0) ?: pageBitmaps.firstOrNull()
         persistReadingPosition(url, filename, initialPage, totalPageCount, firstPageBmp)
-        if (loadedFromCache) {
-          showToast("Loaded from cache ($totalPageCount pages)", ToastType.SUCCESS)
-        } else if (initialPage > 1) {
+        if (initialPage > 1) {
           showToast("Resumed at page $initialPage of $totalPageCount", ToastType.SUCCESS)
         } else {
           showToast("PDF loaded successfully ($totalPageCount pages)", ToastType.SUCCESS)
         }
       } else {
-        // Fallback viewer if native rendering failed
+        // Use web-based viewer fallback so the user's document still opens and views!
         val lastTotal = sharedPreferences?.getInt("last_total_pages", 1) ?: 1
         val effectiveTotal = maxOf(totalPageCount, lastTotal, savedPage)
         val initialPage = savedPage.coerceIn(1, effectiveTotal)
         _activeDocument.value = PdfDocument(
           url = url,
           title = filename,
-          localFilePath = if (cachedFile?.exists() == true) cachedFile.absolutePath else null,
+          localFilePath = if (localFile?.exists() == true) localFile.absolutePath else null,
           totalPages = effectiveTotal,
           currentPage = initialPage,
           zoomPercent = 100,
@@ -723,26 +589,6 @@ class PdfViewModel(
   fun setPageSpacing(spacing: PageSpacing) {
     _pageSpacing.value = spacing
     sharedPreferences?.edit()?.putString("pref_page_spacing", spacing.name)?.apply()
-  }
-
-  fun setLockZoomIn(locked: Boolean) {
-    _lockZoomIn.value = locked
-    sharedPreferences?.edit()?.putBoolean("pref_lock_zoom_in", locked)?.apply()
-    showToast(if (locked) "Zoom In Locked" else "Zoom In Unlocked", ToastType.INFO)
-  }
-
-  fun toggleLockZoomIn() {
-    setLockZoomIn(!_lockZoomIn.value)
-  }
-
-  fun setLockZoomOut(locked: Boolean) {
-    _lockZoomOut.value = locked
-    sharedPreferences?.edit()?.putBoolean("pref_lock_zoom_out", locked)?.apply()
-    showToast(if (locked) "Zoom Out Locked" else "Zoom Out Unlocked", ToastType.INFO)
-  }
-
-  fun toggleLockZoomOut() {
-    setLockZoomOut(!_lockZoomOut.value)
   }
 
   fun toggleKeepScreenAwake() {
@@ -1071,14 +917,7 @@ class PdfViewModel(
       try {
         getThumbnailFile()?.delete()
       } catch (_: Exception) {}
-      try {
-        getCachedPdfFile(currentUrl)?.delete()
-      } catch (_: Exception) {}
     }
-    try {
-      val context = getApplication<Application>()
-      File(context.cacheDir, "opened_document.pdf").delete()
-    } catch (_: Exception) {}
     _savedDocumentStatus.value = null
     _activeDocument.value = null
     _urlInput.value = ""

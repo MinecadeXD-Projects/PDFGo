@@ -81,8 +81,6 @@ fun PdfGoApp(
   val pageSpacing by viewModel.pageSpacing.collectAsState()
   val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
   val saveReadingPosition by viewModel.saveReadingPosition.collectAsState()
-  val lockZoomIn by viewModel.lockZoomIn.collectAsState()
-  val lockZoomOut by viewModel.lockZoomOut.collectAsState()
   val savedDocumentStatus by viewModel.savedDocumentStatus.collectAsState()
   val isFullscreen by viewModel.isFullscreen.collectAsState()
   val searchState by viewModel.searchState.collectAsState()
@@ -148,8 +146,6 @@ fun PdfGoApp(
                 searchState = searchState,
                 fitMode = fitMode,
                 pageSpacing = pageSpacing,
-                lockZoomIn = lockZoomIn,
-                lockZoomOut = lockZoomOut,
                 onBack = { viewModel.navigateBackFromReader() },
                 onToggleFullscreen = { viewModel.toggleFullscreen() },
                 onOpenSearch = { viewModel.openSearch() },
@@ -161,13 +157,10 @@ fun PdfGoApp(
                 onOpenRemoveModal = { viewModel.openRemovePdfModal() },
                 onOpenSettings = { viewModel.openSettings(Screen.READER) },
                 onToggleFitMode = { viewModel.toggleFitMode() },
-                onToggleLockZoomIn = { viewModel.toggleLockZoomIn() },
-                onToggleLockZoomOut = { viewModel.toggleLockZoomOut() },
                 onChangePage = { viewModel.changePage(it) },
                 onSetPage = { viewModel.setPage(it) },
                 onAdjustZoom = { viewModel.adjustZoom(it) },
-                getPageBitmap = { page, zoom -> viewModel.loadPageBitmap(page, zoom) },
-                onPrefetchPage = { page, zoom -> viewModel.prefetchPage(page, (zoom * 4).toInt().coerceIn(1, 16), zoom) },
+                getPageBitmap = { viewModel.loadPageBitmap(it) },
               )
             } ?: run {
               HomeScreen(
@@ -189,16 +182,12 @@ fun PdfGoApp(
               currentTheme = themeSetting,
               fitMode = fitMode,
               pageSpacing = pageSpacing,
-              lockZoomIn = lockZoomIn,
-              lockZoomOut = lockZoomOut,
               keepScreenAwake = keepScreenAwake,
               saveReadingPosition = saveReadingPosition,
               onBack = { viewModel.navigateBackFromSettings() },
               onThemeChange = { viewModel.setTheme(it) },
               onFitModeChange = { viewModel.setFitMode(it) },
               onPageSpacingChange = { viewModel.setPageSpacing(it) },
-              onToggleLockZoomIn = { viewModel.toggleLockZoomIn() },
-              onToggleLockZoomOut = { viewModel.toggleLockZoomOut() },
               onToggleKeepAwake = { viewModel.toggleKeepScreenAwake() },
               onToggleSavePosition = { viewModel.toggleSaveReadingPosition() },
             )

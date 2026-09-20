@@ -16,8 +16,8 @@ enum class FitMode(val label: String) {
 }
 
 enum class PageSpacing(val label: String, val dpValue: Int) {
-  COMPACT("Compact (8dp - Default)", 8),
   NORMAL("Normal (16dp)", 16),
+  COMPACT("Compact (8dp)", 8),
   NONE("None (Continuous)", 0)
 }
 
