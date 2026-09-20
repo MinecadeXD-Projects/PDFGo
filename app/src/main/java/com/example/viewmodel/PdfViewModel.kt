@@ -250,8 +250,9 @@ class PdfViewModel(
       pageCache.get(pageIndex)?.let { return@synchronized it }
       try {
         val page = renderer.openPage(pageIndex)
-        // Apply zoom to scale
-        val scale = (1080f / page.width.coerceAtLeast(100)) * zoom
+        // Apply zoom to scale with a safe upper limit to prevent OutOfMemoryError at 500-600% zoom
+        val targetWidth = (1080f * zoom).coerceIn(720f, 2560f)
+        val scale = targetWidth / page.width.coerceAtLeast(100)
         val bmpW = (page.width * scale).toInt().coerceAtLeast(300)
         val bmpH = (page.height * scale).toInt().coerceAtLeast(400)
         val bmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
