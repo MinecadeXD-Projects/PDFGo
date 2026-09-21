@@ -75,3 +75,20 @@ val PillControlGradient = Brush.horizontalGradient(
   colors = listOf(Slate900, Slate950)
 )
 
+// Home Screen Background Gradients
+val HomeDarkBaseGradient = Brush.verticalGradient(
+  colors = listOf(
+    Color(0xFF0C162D), // Deep brand navy
+    Color(0xFF0F172A), // Slate 900
+    Color(0xFF090D16), // Slate 950
+  )
+)
+
+val HomeLightBaseGradient = Brush.verticalGradient(
+  colors = listOf(
+    Color(0xFFEFF6FF), // Soft azure blue 50 tint
+    Color(0xFFF1F5F9), // Slate 100
+    Color(0xFFF8FAFC), // Slate 50 base
+  )
+)
+

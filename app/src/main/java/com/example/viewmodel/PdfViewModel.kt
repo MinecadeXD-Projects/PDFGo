@@ -634,7 +634,7 @@ class PdfViewModel(
     val newState = !_isFullscreen.value
     _isFullscreen.value = newState
     if (newState) {
-      showToast("PDFGo Fullscreen active (Tap pill to exit)", ToastType.INFO)
+      showToast("Press back button on navigation bar to exit full screen", ToastType.INFO, 3500L)
     }
   }
 
@@ -999,7 +999,7 @@ class PdfViewModel(
     updateCacheSize()
   }
 
-  fun clearAllCache() {
+  fun clearAllCache(onComplete: (() -> Unit)? = null) {
     viewModelScope.launch(ioDispatcher) {
       closeActiveRenderer()
       var freedBytes = 0L
@@ -1011,20 +1011,28 @@ class PdfViewModel(
             file.delete()
           }
         }
-        // Remove all saved reading positions and last document state
+        synchronized(rendererLock) {
+          pageCache.evictAll()
+        }
+        // Remove all saved reading positions and enforce page 1 for the document
+        val targetUrl = _activeDocument.value?.url ?: _savedDocumentStatus.value?.url ?: sharedPreferences?.getString("last_url", null)
+        val targetTitle = _activeDocument.value?.title ?: _savedDocumentStatus.value?.title ?: sharedPreferences?.getString("last_title", "Document.pdf") ?: "Document.pdf"
+        val targetTotal = _activeDocument.value?.totalPages ?: _savedDocumentStatus.value?.totalPages ?: sharedPreferences?.getInt("last_total_pages", 1) ?: 1
+
         sharedPreferences?.let { prefs ->
-          val lastUrl = prefs.getString("last_url", null)
           val editor = prefs.edit()
           prefs.all.keys.forEach { key ->
-            if (key.startsWith("page_") ||
-                key == "last_total_pages") {
+            if (key.startsWith("page_")) {
               editor.remove(key)
             }
           }
-          if (lastUrl != null) {
-            editor.putInt("page_$lastUrl", 1)
+          if (!targetUrl.isNullOrBlank()) {
+            editor.putString("last_url", targetUrl)
+            editor.putString("last_title", targetTitle)
+            editor.putInt("page_$targetUrl", 1)
+            editor.putInt("last_total_pages", targetTotal)
           }
-          editor.apply()
+          editor.commit()
         }
       } catch (_: Exception) {}
 
@@ -1032,15 +1040,24 @@ class PdfViewModel(
 
       val formattedFreed = formatBytes(freedBytes)
       withContext(Dispatchers.Main) {
-        val currentSaved = _savedDocumentStatus.value
-        if (currentSaved != null) {
-          _savedDocumentStatus.value = currentSaved.copy(page = 1)
-        }
-        val doc = _activeDocument.value
-        if (doc != null) {
-          _activeDocument.value = doc.copy(currentPage = 1)
+        val targetUrl = _activeDocument.value?.url ?: _savedDocumentStatus.value?.url ?: sharedPreferences?.getString("last_url", null)
+        val targetTitle = _activeDocument.value?.title ?: _savedDocumentStatus.value?.title ?: sharedPreferences?.getString("last_title", "Document.pdf") ?: "Document.pdf"
+        val targetTotal = _activeDocument.value?.totalPages ?: _savedDocumentStatus.value?.totalPages ?: sharedPreferences?.getInt("last_total_pages", 1) ?: 1
+
+        _activeDocument.value = null
+        if (!targetUrl.isNullOrBlank()) {
+          _savedDocumentStatus.value = SavedDocumentStatus(
+            url = targetUrl,
+            title = targetTitle,
+            page = 1,
+            totalPages = targetTotal,
+            thumbnailBitmap = null
+          )
+        } else {
+          _savedDocumentStatus.value = null
         }
         showToast("Cleared $formattedFreed of cache", ToastType.SUCCESS)
+        onComplete?.invoke()
       }
     }
   }
@@ -1092,10 +1109,13 @@ class PdfViewModel(
   }
 
   // Toast
-  fun showToast(msg: String, type: ToastType) {
+  fun showToast(msg: String, type: ToastType, durationMs: Long = 2600L) {
     _toastMessage.value = ToastMessage(text = msg, type = type)
+    try {
+      android.widget.Toast.makeText(getApplication(), msg, android.widget.Toast.LENGTH_SHORT).show()
+    } catch (_: Exception) {}
     viewModelScope.launch {
-      delay(2600)
+      delay(durationMs)
       if (_toastMessage.value?.text == msg) {
         _toastMessage.value = null
       }

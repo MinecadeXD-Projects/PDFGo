@@ -20,12 +20,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,7 +43,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NavigateBefore
 import androidx.compose.material.icons.filled.NavigateNext
@@ -161,11 +163,30 @@ fun ReaderScreen(
     onSetZoomPercent(100)
   }
 
-  // Jump immediately to initial/saved page on document load
-  LaunchedEffect(document.url) {
-    if (document.totalPages > 0) {
+  // System bar insets to prevent topmost and bottommost pages from being cut off by Android bars in full screen
+  val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
+  val statusBarHeight = systemBarsPadding.calculateTopPadding()
+  val navBarHeight = systemBarsPadding.calculateBottomPadding()
+
+  val topContentPadding = if (isFullscreen) {
+    maxOf(statusBarHeight + 16.dp, 48.dp)
+  } else {
+    16.dp
+  }
+
+  val bottomContentPadding = if (isFullscreen) {
+    maxOf(navBarHeight + 24.dp, 56.dp)
+  } else {
+    80.dp
+  }
+
+  // Jump immediately to initial/saved page on document load or external page reset
+  LaunchedEffect(document.url, document.currentPage) {
+    if (document.totalPages > 0 && !lazyListState.isScrollInProgress) {
       val targetIndex = (document.currentPage - 1).coerceIn(0, document.totalPages - 1)
-      lazyListState.scrollToItem(targetIndex)
+      if (lazyListState.firstVisibleItemIndex != targetIndex) {
+        lazyListState.scrollToItem(targetIndex)
+      }
     }
   }
 
@@ -785,7 +806,12 @@ fun ReaderScreen(
             LazyColumn(
               state = lazyListState,
               modifier = Modifier.fillMaxSize(),
-              contentPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp),
+              contentPadding = PaddingValues(
+                top = topContentPadding,
+                bottom = bottomContentPadding,
+                start = 12.dp,
+                end = 12.dp,
+              ),
               horizontalAlignment = Alignment.CenterHorizontally,
               verticalArrangement = Arrangement.spacedBy(pageGap),
             ) {
@@ -850,19 +876,33 @@ fun ReaderScreen(
                   loadUrl("https://docs.google.com/viewer?url=$encodedUrl&embedded=true")
                 }
               },
-              modifier = Modifier.fillMaxSize(),
+              modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                  top = if (isFullscreen) topContentPadding else 0.dp,
+                  bottom = if (isFullscreen) bottomContentPadding else 0.dp,
+                ),
             )
           } else {
             // Fallback document card for testing / unit test environments
-            Card(
-              shape = RoundedCornerShape(8.dp),
-              colors = CardDefaults.cardColors(containerColor = Color.White),
-              elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-              modifier =
-                Modifier.fillMaxWidth()
-                  .widthIn(max = 520.dp)
-                  .padding(24.dp),
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                  top = if (isFullscreen) topContentPadding else 0.dp,
+                  bottom = if (isFullscreen) bottomContentPadding else 0.dp,
+                ),
+              contentAlignment = Alignment.Center,
             ) {
+              Card(
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .widthIn(max = 520.dp)
+                    .padding(24.dp),
+              ) {
               Column(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -893,6 +933,7 @@ fun ReaderScreen(
             }
           }
         }
+      }
 
         // Floating Reset Zoom Pill at Top Right when zoomed in
         androidx.compose.animation.AnimatedVisibility(
@@ -908,7 +949,12 @@ fun ReaderScreen(
             contentColor = Color.White,
             shadowElevation = 6.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
-            modifier = Modifier.padding(16.dp).testTag("btn_reset_zoom"),
+            modifier = Modifier.padding(
+              top = if (isFullscreen) maxOf(statusBarHeight + 12.dp, 40.dp) else 16.dp,
+              end = 16.dp,
+              start = 16.dp,
+              bottom = 16.dp
+            ).testTag("btn_reset_zoom"),
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -935,45 +981,6 @@ fun ReaderScreen(
               )
             }
           }
-        }
-      }
-    }
-
-    // Floating Fullscreen Exit Pill at Top
-    AnimatedVisibility(
-      visible = isFullscreen,
-      enter = fadeIn() + slideInVertically { -it },
-      exit = fadeOut() + slideOutVertically { -it },
-      modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp),
-    ) {
-      Surface(
-        onClick = onToggleFullscreen,
-        shape = RoundedCornerShape(50.dp),
-        color = Color.Transparent,
-        contentColor = Color.White,
-        shadowElevation = 8.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Brush.horizontalGradient(listOf(Slate800, Slate700))),
-        modifier = Modifier.clip(RoundedCornerShape(50.dp)).background(PillControlGradient),
-      ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          Icon(
-            imageVector = Icons.Default.FullscreenExit,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(16.dp),
-          )
-          Text(
-            text = "Exit Fullscreen",
-            style =
-              MaterialTheme.typography.labelMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-              ),
-          )
         }
       }
     }

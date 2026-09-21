@@ -111,6 +111,8 @@ fun PdfGoApp(
 
   val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
+  val isEdgeToEdgeScreen = isFullscreen || currentScreen == Screen.HOME
+
   Scaffold(
     modifier = modifier.fillMaxSize(),
     contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -119,8 +121,8 @@ fun PdfGoApp(
       modifier =
         Modifier.fillMaxSize()
           .padding(
-            top = if (isFullscreen) innerPadding.calculateTopPadding() else systemBarsPadding.calculateTopPadding(),
-            bottom = if (isFullscreen) innerPadding.calculateBottomPadding() else systemBarsPadding.calculateBottomPadding(),
+            top = if (isEdgeToEdgeScreen) innerPadding.calculateTopPadding() else systemBarsPadding.calculateTopPadding(),
+            bottom = if (isEdgeToEdgeScreen) innerPadding.calculateBottomPadding() else systemBarsPadding.calculateBottomPadding(),
           ),
     ) {
       Crossfade(
@@ -233,8 +235,9 @@ fun PdfGoApp(
         isOpen = isClearCacheModalOpen,
         onConfirm = {
           viewModel.closeClearCacheModal()
-          viewModel.clearAllCache()
-          onRestartApp()
+          viewModel.clearAllCache {
+            onRestartApp()
+          }
         },
         onDismiss = { viewModel.closeClearCacheModal() },
       )

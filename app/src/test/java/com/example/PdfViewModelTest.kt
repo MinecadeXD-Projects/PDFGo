@@ -88,12 +88,31 @@ class PdfViewModelTest {
   }
 
   @Test
-  fun `fullscreen toggles correctly`() {
+  fun `fullscreen toggles correctly and shows back button toast`() {
     assertFalse(viewModel.isFullscreen.value)
     viewModel.toggleFullscreen()
     assertTrue(viewModel.isFullscreen.value)
+    assertEquals("Press back button on navigation bar to exit full screen", viewModel.toastMessage.value?.text)
+
     viewModel.exitFullscreen()
     assertFalse(viewModel.isFullscreen.value)
+  }
+
+  @Test
+  fun `back press in fullscreen exits fullscreen instead of leaving reader`() = runTest(testDispatcher) {
+    viewModel.onUrlChange("https://example.com/test.pdf")
+    viewModel.attemptOpenPdf()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
+
+    viewModel.toggleFullscreen()
+    assertTrue(viewModel.isFullscreen.value)
+
+    // Pressing back button on navigation bar exits fullscreen mode only
+    val handled = viewModel.handleBack()
+    assertTrue(handled)
+    assertFalse(viewModel.isFullscreen.value)
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
   }
 
   @Test
@@ -237,4 +256,44 @@ class PdfViewModelTest {
     assertEquals(Screen.READER, viewModel.currentScreen.value)
     assertEquals(1, viewModel.activeDocument.value?.currentPage)
   }
+
+  @Test
+  fun `when cache is cleared and app restarts reading position resets to 1`() = runTest(testDispatcher) {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val prefs = app.getSharedPreferences("pdfgo_reader_prefs", android.content.Context.MODE_PRIVATE)
+    prefs.edit().putInt("last_total_pages", 10).apply()
+
+    // 1. Open document and navigate to page 5
+    viewModel.onUrlChange("https://example.com/test_doc.pdf")
+    viewModel.attemptOpenPdf()
+    advanceUntilIdle()
+    viewModel.setPage(5)
+    assertEquals(5, viewModel.activeDocument.value?.currentPage)
+
+    // 2. Clear cache with completion callback
+    var restartTriggered = false
+    viewModel.clearAllCache {
+      restartTriggered = true
+    }
+    advanceUntilIdle()
+
+    assertTrue(restartTriggered)
+    assertEquals(1, viewModel.savedDocumentStatus.value?.page)
+
+    // 3. Simulate app restart with new ViewModel
+    val restartVm = PdfViewModel(app, testDispatcher)
+    advanceUntilIdle()
+
+    // Saved document on Home Screen should display page 1
+    assertEquals("https://example.com/test_doc.pdf", restartVm.savedDocumentStatus.value?.url)
+    assertEquals(1, restartVm.savedDocumentStatus.value?.page)
+    assertEquals(10, restartVm.savedDocumentStatus.value?.totalPages)
+
+    // 4. Resuming reading loads from page 1
+    restartVm.resumeSavedDocument()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, restartVm.currentScreen.value)
+    assertEquals(1, restartVm.activeDocument.value?.currentPage)
+  }
 }
+

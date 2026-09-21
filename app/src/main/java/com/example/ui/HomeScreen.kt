@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -43,7 +46,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -61,13 +66,17 @@ import com.example.ui.theme.BrandBlue
 import com.example.ui.theme.BrandBlueLight
 import com.example.ui.theme.BrandCyan
 import com.example.ui.theme.BrandIndigo
+import com.example.ui.theme.BrandViolet
 import com.example.ui.theme.CardBorderGradient
 import com.example.ui.theme.DangerGradient
 import com.example.ui.theme.Emerald400
 import com.example.ui.theme.HeroBadgeGradient
 import com.example.ui.theme.HeroTextGradient
+import com.example.ui.theme.HomeDarkBaseGradient
+import com.example.ui.theme.HomeLightBaseGradient
 import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
+import com.example.ui.theme.Slate950
 
 @Composable
 fun HomeScreen(
@@ -85,16 +94,103 @@ fun HomeScreen(
   val clipboardManager = LocalClipboardManager.current
   val scrollState = rememberScrollState()
 
-  Column(
+  val isDark = MaterialTheme.colorScheme.background == Slate950
+  val bgGradient = if (isDark) HomeDarkBaseGradient else HomeLightBaseGradient
+  val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
+
+  Box(
     modifier =
       modifier
         .fillMaxSize()
-        .background(MaterialTheme.colorScheme.background)
-        .padding(horizontal = 24.dp)
-        .verticalScroll(scrollState),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.SpaceBetween,
+        .background(bgGradient)
+        .drawBehind {
+          // Atmospheric ambient radial glow at top-right
+          drawCircle(
+            brush =
+              Brush.radialGradient(
+                colors =
+                  if (isDark) {
+                    listOf(
+                      BrandBlue.copy(alpha = 0.22f),
+                      BrandCyan.copy(alpha = 0.08f),
+                      Color.Transparent,
+                    )
+                  } else {
+                    listOf(
+                      BrandBlueLight.copy(alpha = 0.85f),
+                      BrandCyan.copy(alpha = 0.15f),
+                      Color.Transparent,
+                    )
+                  },
+                center = Offset(size.width * 0.90f, size.height * 0.08f),
+                radius = size.width * 0.95f,
+              ),
+            radius = size.width * 0.95f,
+            center = Offset(size.width * 0.90f, size.height * 0.08f),
+          )
+
+          // Atmospheric ambient radial glow at center-left behind hero badge/headline
+          drawCircle(
+            brush =
+              Brush.radialGradient(
+                colors =
+                  if (isDark) {
+                    listOf(
+                      BrandIndigo.copy(alpha = 0.16f),
+                      Color.Transparent,
+                    )
+                  } else {
+                    listOf(
+                      Color(0xFFE0E7FF).copy(alpha = 0.70f),
+                      Color.Transparent,
+                    )
+                  },
+                center = Offset(size.width * 0.05f, size.height * 0.32f),
+                radius = size.width * 0.75f,
+              ),
+            radius = size.width * 0.75f,
+            center = Offset(size.width * 0.05f, size.height * 0.32f),
+          )
+
+          // Atmospheric ambient radial glow at bottom-right behind open/active document card
+          drawCircle(
+            brush =
+              Brush.radialGradient(
+                colors =
+                  if (isDark) {
+                    listOf(
+                      BrandBlue.copy(alpha = 0.12f),
+                      BrandViolet.copy(alpha = 0.06f),
+                      Color.Transparent,
+                    )
+                  } else {
+                    listOf(
+                      BrandBlueLight.copy(alpha = 0.60f),
+                      Color.Transparent,
+                    )
+                  },
+                center = Offset(size.width * 0.85f, size.height * 0.88f),
+                radius = size.width * 0.80f,
+              ),
+            radius = size.width * 0.80f,
+            center = Offset(size.width * 0.85f, size.height * 0.88f),
+          )
+        },
   ) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxSize()
+          .padding(
+            start = 24.dp,
+            end = 24.dp,
+            top = systemBarsPadding.calculateTopPadding(),
+            bottom = systemBarsPadding.calculateBottomPadding(),
+          )
+          .verticalScroll(scrollState),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceBetween,
+    ) {
     // Top Bar
     Column(modifier = Modifier.fillMaxWidth()) {
       Spacer(modifier = Modifier.height(12.dp))
@@ -588,4 +684,5 @@ fun HomeScreen(
       )
     }
   }
+}
 }
