@@ -179,6 +179,32 @@ fun ReaderScreen(
   }
 
   var visiblePageRangeStr by remember { mutableStateOf("${document.currentPage}") }
+  var isPageCounterVisible by remember { mutableStateOf(true) }
+  var isZoomPillVisible by remember { mutableStateOf(false) }
+
+  // Auto-hide page counter 3s after last scroll/page interaction
+  LaunchedEffect(
+    document.currentPage,
+    lazyListState.isScrollInProgress,
+    lazyListState.firstVisibleItemScrollOffset
+  ) {
+    isPageCounterVisible = true
+    kotlinx.coroutines.delay(3000L)
+    if (!lazyListState.isScrollInProgress) {
+      isPageCounterVisible = false
+    }
+  }
+
+  // Auto-hide zoom pill 3s after last zoom/pan activity
+  LaunchedEffect(zoomScale, panOffset) {
+    if (zoomScale > 1.05f) {
+      isZoomPillVisible = true
+      kotlinx.coroutines.delay(3000L)
+      isZoomPillVisible = false
+    } else {
+      isZoomPillVisible = false
+    }
+  }
 
   // Observe scroll position to update the page counter dynamically as user scrolls
   LaunchedEffect(lazyListState) {
@@ -639,6 +665,12 @@ fun ReaderScreen(
                     )
                     onSetZoomPercent(220)
                   }
+                },
+                onTap = {
+                  isPageCounterVisible = !isPageCounterVisible
+                  if (zoomScale > 1.05f) {
+                    isZoomPillVisible = !isZoomPillVisible
+                  }
                 }
               )
             }
@@ -846,7 +878,12 @@ fun ReaderScreen(
         }
 
         // Floating Reset Zoom Pill at Top Right when zoomed in
-        if (zoomScale > 1.05f) {
+        androidx.compose.animation.AnimatedVisibility(
+          visible = zoomScale > 1.05f && isZoomPillVisible,
+          enter = fadeIn(),
+          exit = fadeOut(),
+          modifier = Modifier.align(Alignment.TopEnd)
+        ) {
           Surface(
             onClick = resetZoom,
             shape = RoundedCornerShape(50.dp),
@@ -854,7 +891,7 @@ fun ReaderScreen(
             contentColor = Color.White,
             shadowElevation = 6.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, Slate800),
-            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).testTag("btn_reset_zoom"),
+            modifier = Modifier.padding(16.dp).testTag("btn_reset_zoom"),
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -926,7 +963,7 @@ fun ReaderScreen(
 
     // Floating Bottom Bar (Controls)
     AnimatedVisibility(
-      visible = !isFullscreen,
+      visible = !isFullscreen && isPageCounterVisible,
       enter = slideInVertically { it } + fadeIn(),
       exit = slideOutVertically { it } + fadeOut(),
       modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),

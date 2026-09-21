@@ -48,9 +48,10 @@ class MainActivity : ComponentActivity() {
     setContent {
       val themeSetting by viewModel.themeSetting.collectAsState()
       val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
+      val currentScreen by viewModel.currentScreen.collectAsState()
 
-      LaunchedEffect(keepScreenAwake) {
-        if (keepScreenAwake) {
+      LaunchedEffect(keepScreenAwake, currentScreen) {
+        if (keepScreenAwake && currentScreen == Screen.READER) {
           window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
           window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
