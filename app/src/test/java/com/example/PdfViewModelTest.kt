@@ -2,7 +2,6 @@ package com.example
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
-import com.example.model.FitMode
 import com.example.model.PageSpacing
 import com.example.model.Screen
 import com.example.ui.theme.AppThemeSetting
@@ -128,21 +127,21 @@ class PdfViewModelTest {
   fun `settings modifications update state and persist across restart`() = runTest(testDispatcher) {
     val app = ApplicationProvider.getApplicationContext<Application>()
     viewModel.setTheme(AppThemeSetting.LIGHT)
-    viewModel.setFitMode(FitMode.FIT_PAGE)
     viewModel.setPageSpacing(PageSpacing.COMPACT)
     viewModel.toggleKeepScreenAwake() // default was true, now false
+    viewModel.toggleSaveReadingPosition() // default was true, now false
 
     assertEquals(AppThemeSetting.LIGHT, viewModel.themeSetting.value)
-    assertEquals(FitMode.FIT_PAGE, viewModel.fitMode.value)
     assertEquals(PageSpacing.COMPACT, viewModel.pageSpacing.value)
     assertFalse(viewModel.keepScreenAwake.value)
+    assertFalse(viewModel.saveReadingPosition.value)
 
     // Simulate app restart with new ViewModel
     val newVm = PdfViewModel(app, testDispatcher)
     assertEquals(AppThemeSetting.LIGHT, newVm.themeSetting.value)
-    assertEquals(FitMode.FIT_PAGE, newVm.fitMode.value)
     assertEquals(PageSpacing.COMPACT, newVm.pageSpacing.value)
     assertFalse(newVm.keepScreenAwake.value)
+    assertFalse(newVm.saveReadingPosition.value)
   }
 
   @Test
@@ -205,5 +204,37 @@ class PdfViewModelTest {
     assertEquals(Screen.READER, vm.currentScreen.value)
     assertEquals(4, vm.activeDocument.value?.currentPage)
     assertEquals(10, vm.activeDocument.value?.totalPages)
+  }
+
+  @Test
+  fun `when save reading position is disabled reading position resets to 1 on resume and back`() = runTest(testDispatcher) {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val prefs = app.getSharedPreferences("pdfgo_reader_prefs", android.content.Context.MODE_PRIVATE)
+    prefs.edit().putInt("last_total_pages", 10).apply()
+
+    // 1. Open document and navigate to page 5
+    viewModel.onUrlChange("https://example.com/test_doc.pdf")
+    viewModel.attemptOpenPdf()
+    advanceUntilIdle()
+    viewModel.setPage(5)
+    assertEquals(5, viewModel.activeDocument.value?.currentPage)
+
+    // 2. Disable save reading position
+    viewModel.toggleSaveReadingPosition()
+    assertFalse(viewModel.saveReadingPosition.value)
+
+    // Verify saved document status is reset to page 1
+    assertEquals(1, viewModel.savedDocumentStatus.value?.page)
+
+    // 3. User navigates back from reader
+    viewModel.navigateBackFromReader()
+    assertEquals(Screen.HOME, viewModel.currentScreen.value)
+    assertEquals(1, viewModel.savedDocumentStatus.value?.page)
+
+    // 4. Resume saved document - should start from page 1
+    viewModel.resumeSavedDocument()
+    advanceUntilIdle()
+    assertEquals(Screen.READER, viewModel.currentScreen.value)
+    assertEquals(1, viewModel.activeDocument.value?.currentPage)
   }
 }

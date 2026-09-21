@@ -142,7 +142,9 @@ fun ReaderScreen(
   modifier: Modifier = Modifier,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
-  val lazyListState = rememberLazyListState()
+  val lazyListState = rememberLazyListState(
+    initialFirstVisibleItemIndex = (document.currentPage - 1).coerceAtLeast(0)
+  )
   val coroutineScope = rememberCoroutineScope()
 
   // Track page aspect ratios dynamically to prevent list layout shifting when scrolling up
@@ -161,7 +163,7 @@ fun ReaderScreen(
 
   // Jump immediately to initial/saved page on document load
   LaunchedEffect(document.url) {
-    if (document.currentPage > 1 && document.totalPages > 0) {
+    if (document.totalPages > 0) {
       val targetIndex = (document.currentPage - 1).coerceIn(0, document.totalPages - 1)
       lazyListState.scrollToItem(targetIndex)
     }
@@ -182,26 +184,41 @@ fun ReaderScreen(
   var isPageCounterVisible by remember { mutableStateOf(true) }
   var isZoomPillVisible by remember { mutableStateOf(false) }
 
-  // Auto-hide page counter 3s after last scroll/page interaction
+  // Show page counter on page/scroll activity
   LaunchedEffect(
     document.currentPage,
     lazyListState.isScrollInProgress,
     lazyListState.firstVisibleItemScrollOffset
   ) {
     isPageCounterVisible = true
-    kotlinx.coroutines.delay(3000L)
-    if (!lazyListState.isScrollInProgress) {
-      isPageCounterVisible = false
+  }
+
+  // Auto-hide page counter 3s after last activity or manual toggle
+  LaunchedEffect(
+    isPageCounterVisible,
+    document.currentPage,
+    lazyListState.isScrollInProgress,
+    lazyListState.firstVisibleItemScrollOffset
+  ) {
+    if (isPageCounterVisible) {
+      kotlinx.coroutines.delay(3000L)
+      if (!lazyListState.isScrollInProgress) {
+        isPageCounterVisible = false
+      }
     }
   }
 
-  // Auto-hide zoom pill 3s after last zoom/pan activity
+  // Ensure zoom pill is visible on zoom/pan activity
   LaunchedEffect(zoomScale, panOffset) {
     if (zoomScale > 1.05f) {
       isZoomPillVisible = true
+    }
+  }
+
+  // Auto-hide zoom pill 3s after last activity or manual toggle
+  LaunchedEffect(isZoomPillVisible, zoomScale, panOffset) {
+    if (zoomScale > 1.05f && isZoomPillVisible) {
       kotlinx.coroutines.delay(3000L)
-      isZoomPillVisible = false
-    } else {
       isZoomPillVisible = false
     }
   }

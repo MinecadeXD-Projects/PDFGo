@@ -168,7 +168,9 @@ class PdfViewModel(
     val lastUrl = prefs.getString("last_url", null)
     if (!lastUrl.isNullOrBlank()) {
       val lastTitle = prefs.getString("last_title", "Document.pdf") ?: "Document.pdf"
-      val lastPage = prefs.getInt("page_$lastUrl", 1)
+      val lastPage = if (_saveReadingPosition.value) {
+        prefs.getInt("page_$lastUrl", 1)
+      } else 1
       val lastTotal = prefs.getInt("last_total_pages", 1)
       val thumb = loadThumbnailFromDisk()
       _savedDocumentStatus.value = SavedDocumentStatus(
@@ -189,11 +191,11 @@ class PdfViewModel(
     totalPages: Int,
     thumbnail: Bitmap? = null
   ) {
-    if (!_saveReadingPosition.value) return
+    val effectivePage = if (_saveReadingPosition.value) page else 1
     sharedPreferences?.edit()
       ?.putString("last_url", url)
       ?.putString("last_title", title)
-      ?.putInt("page_$url", page)
+      ?.putInt("page_$url", effectivePage)
       ?.putInt("last_total_pages", totalPages)
       ?.apply()
 
@@ -201,7 +203,7 @@ class PdfViewModel(
       saveThumbnailToDisk(thumbnail)
     }
     val effectiveThumb = thumbnail ?: _savedDocumentStatus.value?.thumbnailBitmap ?: loadThumbnailFromDisk()
-    _savedDocumentStatus.value = SavedDocumentStatus(url, title, page, totalPages, effectiveThumb)
+    _savedDocumentStatus.value = SavedDocumentStatus(url, title, effectivePage, totalPages, effectiveThumb)
   }
 
   // Reader state
@@ -574,10 +576,16 @@ class PdfViewModel(
   fun navigateBackFromReader() {
     val doc = _activeDocument.value
     if (doc != null) {
-      persistReadingPosition(doc.url, doc.title, doc.currentPage, doc.totalPages)
+      if (_saveReadingPosition.value) {
+        persistReadingPosition(doc.url, doc.title, doc.currentPage, doc.totalPages)
+        showToast("Saved page ${doc.currentPage}", ToastType.INFO)
+      } else {
+        persistReadingPosition(doc.url, doc.title, 1, doc.totalPages)
+        _activeDocument.value = doc.copy(currentPage = 1)
+        showToast("Closed document", ToastType.INFO)
+      }
     }
     _currentScreen.value = Screen.HOME
-    showToast("Saved page ${doc?.currentPage ?: 1}", ToastType.INFO)
   }
 
   // Settings modification with persistence
@@ -608,6 +616,15 @@ class PdfViewModel(
       }
       showToast("Reading position saving enabled", ToastType.INFO)
     } else {
+      val currentSaved = _savedDocumentStatus.value
+      if (currentSaved != null) {
+        _savedDocumentStatus.value = currentSaved.copy(page = 1)
+        sharedPreferences?.edit()?.putInt("page_${currentSaved.url}", 1)?.apply()
+      }
+      val doc = _activeDocument.value
+      if (doc != null) {
+        _activeDocument.value = doc.copy(currentPage = 1)
+      }
       showToast("Reading position saving disabled", ToastType.INFO)
     }
   }
@@ -635,13 +652,18 @@ class PdfViewModel(
     val newPage = targetPage.coerceIn(1, doc.totalPages)
     if (doc.currentPage != newPage) {
       _activeDocument.value = doc.copy(currentPage = newPage)
-      persistReadingPosition(doc.url, doc.title, newPage, doc.totalPages)
+      if (_saveReadingPosition.value) {
+        persistReadingPosition(doc.url, doc.title, newPage, doc.totalPages)
+      }
     }
   }
 
   fun resumeSavedDocument() {
     val active = _activeDocument.value
     if (active != null) {
+      if (!_saveReadingPosition.value) {
+        _activeDocument.value = active.copy(currentPage = 1)
+      }
       _currentScreen.value = Screen.READER
       return
     }
@@ -1013,6 +1035,10 @@ class PdfViewModel(
         val currentSaved = _savedDocumentStatus.value
         if (currentSaved != null) {
           _savedDocumentStatus.value = currentSaved.copy(page = 1)
+        }
+        val doc = _activeDocument.value
+        if (doc != null) {
+          _activeDocument.value = doc.copy(currentPage = 1)
         }
         showToast("Cleared $formattedFreed of cache", ToastType.SUCCESS)
       }
