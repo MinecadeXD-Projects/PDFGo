@@ -801,23 +801,22 @@ fun ReaderScreen(
                     if (kotlin.math.abs(newScale - 1f) <= 0.02f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
-                    } else if (newScale > 1f) {
+                    } else {
                       val centroid = event.calculateCentroid(useCurrent = true)
                       val centroidRelative = centroid - Offset(size.width / 2f, size.height / 2f)
 
-                      val maxPanX = (size.width * (newScale - 1f)) / 2f
-                      val maxPanY = (size.height * (newScale - 1f)) / 2f
+                      val maxPanX = if (newScale > 1f) (size.width * (newScale - 1f)) / 2f else 0f
+                      val maxPanY = if (newScale > 1f) (size.height * (newScale - 1f)) / 2f else 0f
 
-                      // Mathematical zoom focus centering (translates pan offset to anchor zoom at gesture centroid using actualZoomChange)
-                      val newX = (panOffset.x * actualZoomChange + panChange.x + centroidRelative.x * (1f - actualZoomChange)).coerceIn(-maxPanX, maxPanX)
-                      val newY = (panOffset.y * actualZoomChange + panChange.y + centroidRelative.y * (1f - actualZoomChange)).coerceIn(-maxPanY, maxPanY)
+                      val newX = if (newScale > 1f) {
+                        (panOffset.x * actualZoomChange + panChange.x + centroidRelative.x * (1f - actualZoomChange)).coerceIn(-maxPanX, maxPanX)
+                      } else 0f
+                      val newY = if (newScale > 1f) {
+                        (panOffset.y * actualZoomChange + panChange.y + centroidRelative.y * (1f - actualZoomChange)).coerceIn(-maxPanY, maxPanY)
+                      } else 0f
 
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
-                    } else {
-                      // Zoomed out (< 1f): keep pages centered horizontally and vertically
-                      zoomScale = newScale
-                      panOffset = Offset.Zero
                     }
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
@@ -862,17 +861,10 @@ fun ReaderScreen(
           modifier =
             Modifier.fillMaxSize()
               .graphicsLayer {
-                if (zoomScale > 1f) {
-                  scaleX = zoomScale
-                  scaleY = zoomScale
-                  translationX = panOffset.x
-                  translationY = panOffset.y
-                } else {
-                  scaleX = 1f
-                  scaleY = 1f
-                  translationX = 0f
-                  translationY = 0f
-                }
+                scaleX = zoomScale
+                scaleY = zoomScale
+                translationX = panOffset.x
+                translationY = panOffset.y
               }
         ) {
           if (document.totalPages > 0 && !document.useWebViewFallback) {
@@ -1276,17 +1268,13 @@ fun PdfPageCard(
   }
   val borderWidth = if (isCurrentMatchPage) 2.5.dp else if (isMatchedPage) 1.5.dp else 1.dp
 
-  val effectiveWidthFraction = if (zoomScale < 1f) zoomScale else 1f
-  val maxBaseWidth = 680.dp
-  val effectiveMaxWidth = maxBaseWidth * effectiveWidthFraction
-
   Card(
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
     elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
     modifier = modifier
-      .widthIn(max = effectiveMaxWidth)
-      .fillMaxWidth(effectiveWidthFraction)
+      .widthIn(max = 680.dp)
+      .fillMaxWidth()
       .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
   ) {
     Box(
