@@ -250,7 +250,7 @@ class PdfViewModel(
       try {
         val page = renderer.openPage(pageIndex)
         // Apply zoom to scale with a safe upper limit to prevent OutOfMemoryError at 500-600% zoom
-        val targetWidth = (1080f * zoom).coerceIn(380f, 2560f)
+        val targetWidth = (1080f * zoom).coerceIn(540f, 2560f)
         val scale = targetWidth / page.width.coerceAtLeast(100)
         val bmpW = (page.width * scale).toInt().coerceAtLeast(200)
         val bmpH = (page.height * scale).toInt().coerceAtLeast(200)
@@ -674,7 +674,7 @@ class PdfViewModel(
 
   fun setZoomPercent(percent: Int) {
     val doc = _activeDocument.value ?: return
-    val newZoom = percent.coerceIn(35, 600)
+    val newZoom = percent.coerceIn(50, 600)
     if (doc.zoomPercent != newZoom) {
       synchronized(rendererLock) {
         pageCache.evictAll()
@@ -685,7 +685,7 @@ class PdfViewModel(
 
   fun adjustZoom(delta: Int) {
     val doc = _activeDocument.value ?: return
-    val newZoom = (doc.zoomPercent + delta).coerceIn(35, 600)
+    val newZoom = (doc.zoomPercent + delta).coerceIn(50, 600)
     setZoomPercent(newZoom)
   }
 

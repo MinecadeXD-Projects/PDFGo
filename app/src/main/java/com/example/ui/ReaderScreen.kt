@@ -733,7 +733,7 @@ fun ReaderScreen(
                     }
 
                     val targetScale = zoomScale * zoomChange
-                    val newScale = targetScale.coerceIn(0.35f, 6.0f)
+                    val newScale = targetScale.coerceIn(0.5f, 6.0f)
                     val actualZoomChange = if (zoomScale > 0f) newScale / zoomScale else 1f
 
                     if (kotlin.math.abs(newScale - 1f) <= 0.02f) {
@@ -789,7 +789,7 @@ fun ReaderScreen(
 
                 // Re-render clear bitmap only when user finishes zooming and removes fingers
                 if (didZoom && kotlin.math.abs(zoomScale - initialZoomScale) > 0.05f) {
-                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(35, 600)
+                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(50, 600)
                   onSetZoomPercent(targetZoomPercent)
                 }
               }

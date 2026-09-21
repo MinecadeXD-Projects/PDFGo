@@ -297,24 +297,24 @@ class PdfViewModelTest {
   }
 
   @Test
-  fun `zoom out down to 35 percent is supported`() = runTest(testDispatcher) {
+  fun `zoom out down to 50 percent is supported`() = runTest(testDispatcher) {
     viewModel.onUrlChange("https://example.com/test_doc.pdf")
     viewModel.attemptOpenPdf()
     advanceUntilIdle()
 
     assertEquals(100, viewModel.activeDocument.value?.zoomPercent)
 
-    // Zoom out to 40%
-    viewModel.setZoomPercent(40)
-    assertEquals(40, viewModel.activeDocument.value?.zoomPercent)
+    // Zoom out to 60%
+    viewModel.setZoomPercent(60)
+    assertEquals(60, viewModel.activeDocument.value?.zoomPercent)
 
-    // Coerce at minimum 35%
+    // Coerce at minimum 50%
     viewModel.setZoomPercent(10)
-    assertEquals(35, viewModel.activeDocument.value?.zoomPercent)
+    assertEquals(50, viewModel.activeDocument.value?.zoomPercent)
 
     // Adjust zoom
     viewModel.adjustZoom(25)
-    assertEquals(60, viewModel.activeDocument.value?.zoomPercent)
+    assertEquals(75, viewModel.activeDocument.value?.zoomPercent)
   }
 }
 
