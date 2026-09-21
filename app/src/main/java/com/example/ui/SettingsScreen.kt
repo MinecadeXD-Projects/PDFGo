@@ -504,21 +504,12 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Box(
-              modifier =
-                Modifier.size(38.dp)
-                  .clip(RoundedCornerShape(10.dp))
-                  .background(BrandBlue)
-                  .shadow(2.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Icon(
-                imageVector = Icons.Default.Description,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
-              )
-            }
+            Icon(
+              imageVector = Icons.Default.Description,
+              contentDescription = "PDFGo Logo",
+              tint = BrandBlue,
+              modifier = Modifier.size(32.dp),
+            )
             Column {
               Text(
                 text = "PDFGo",

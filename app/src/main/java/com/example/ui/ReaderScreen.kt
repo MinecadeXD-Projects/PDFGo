@@ -6,6 +6,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -83,6 +86,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.Job
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -157,11 +161,39 @@ fun ReaderScreen(
   // Two-finger pinch to zoom & pan state
   var zoomScale by remember { mutableFloatStateOf(1f) }
   var panOffset by remember { mutableStateOf(Offset.Zero) }
+  var zoomAnimationJob by remember { mutableStateOf<Job?>(null) }
 
   val resetZoom = {
-    zoomScale = 1f
-    panOffset = Offset.Zero
-    onSetZoomPercent(100)
+    zoomAnimationJob?.cancel()
+    val startZoom = zoomScale
+    val startPan = panOffset
+    val targetZoom = 1.0f
+    val targetPan = Offset.Zero
+    zoomAnimationJob = coroutineScope.launch {
+      val anim = Animatable(0f)
+      anim.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+      ) {
+        val p = value
+        zoomScale = startZoom + (targetZoom - startZoom) * p
+        panOffset = Offset(
+          startPan.x + (targetPan.x - startPan.x) * p,
+          startPan.y + (targetPan.y - startPan.y) * p,
+        )
+      }
+      onSetZoomPercent(100)
+    }
+  }
+
+  LaunchedEffect(document.zoomPercent) {
+    val targetScale = document.zoomPercent / 100f
+    if (kotlin.math.abs(zoomScale - targetScale) > 0.01f) {
+      zoomScale = targetScale
+      if (targetScale <= 1f) {
+        panOffset = Offset.Zero
+      }
+    }
   }
 
   // System bar insets to prevent topmost and bottommost pages from being cut off by Android bars in full screen
@@ -690,19 +722,48 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               detectTapGestures(
                 onDoubleTap = { tapOffset ->
-                  if (kotlin.math.abs(zoomScale - 1f) > 0.05f) {
-                    resetZoom()
-                  } else {
-                    zoomScale = 2.2f
-                    val targetPanX = (size.width / 2f - tapOffset.x) * 1.2f
-                    val targetPanY = (size.height / 2f - tapOffset.y) * 1.2f
-                    val maxPanX = (size.width * 1.2f) / 2f
-                    val maxPanY = (size.height * 1.2f) / 2f
-                    panOffset = Offset(
-                      targetPanX.coerceIn(-maxPanX, maxPanX),
-                      targetPanY.coerceIn(-maxPanY, maxPanY),
+                  zoomAnimationJob?.cancel()
+                  val targetZoom: Float
+                  val targetPan: Offset
+
+                  if (zoomScale < 0.98f) {
+                    // Below 100% -> Smoothly zoom to 100%
+                    targetZoom = 1.0f
+                    targetPan = Offset.Zero
+                  } else if (zoomScale <= 1.05f) {
+                    // At ~100% -> Smoothly zoom to 220% centered exactly at double-tap position
+                    targetZoom = 2.2f
+                    val centroidRelative = tapOffset - Offset(size.width / 2f, size.height / 2f)
+                    val scaleFactor = targetZoom - 1f
+                    val maxPanX = (size.width * scaleFactor) / 2f
+                    val maxPanY = (size.height * scaleFactor) / 2f
+                    targetPan = Offset(
+                      (-centroidRelative.x * scaleFactor).coerceIn(-maxPanX, maxPanX),
+                      (-centroidRelative.y * scaleFactor).coerceIn(-maxPanY, maxPanY),
                     )
-                    onSetZoomPercent(220)
+                  } else {
+                    // Anywhere from 100% to 600% -> Smoothly zoom back to 100%
+                    targetZoom = 1.0f
+                    targetPan = Offset.Zero
+                  }
+
+                  val startZoom = zoomScale
+                  val startPan = panOffset
+
+                  zoomAnimationJob = coroutineScope.launch {
+                    val anim = Animatable(0f)
+                    anim.animateTo(
+                      targetValue = 1f,
+                      animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                    ) {
+                      val p = value
+                      zoomScale = startZoom + (targetZoom - startZoom) * p
+                      panOffset = Offset(
+                        startPan.x + (targetPan.x - startPan.x) * p,
+                        startPan.y + (targetPan.y - startPan.y) * p,
+                      )
+                    }
+                    onSetZoomPercent((targetZoom * 100).toInt())
                   }
                 },
                 onTap = {
@@ -716,6 +777,7 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false)
+                zoomAnimationJob?.cancel()
                 var didZoom = false
                 val initialZoomScale = zoomScale
 
@@ -800,10 +862,17 @@ fun ReaderScreen(
           modifier =
             Modifier.fillMaxSize()
               .graphicsLayer {
-                scaleX = zoomScale
-                scaleY = zoomScale
-                translationX = panOffset.x
-                translationY = panOffset.y
+                if (zoomScale > 1f) {
+                  scaleX = zoomScale
+                  scaleY = zoomScale
+                  translationX = panOffset.x
+                  translationY = panOffset.y
+                } else {
+                  scaleX = 1f
+                  scaleY = 1f
+                  translationX = 0f
+                  translationY = 0f
+                }
               }
         ) {
           if (document.totalPages > 0 && !document.useWebViewFallback) {
@@ -833,6 +902,7 @@ fun ReaderScreen(
                 PdfPageCard(
                   pageNumber = pageNum,
                   zoomPercent = document.zoomPercent,
+                  zoomScale = zoomScale,
                   preloadedBitmap = document.pageBitmaps.getOrNull(index),
                   getPageBitmap = getPageBitmap,
                   pageIndex = index,
@@ -1157,6 +1227,7 @@ fun ReaderScreen(
 fun PdfPageCard(
   pageNumber: Int,
   zoomPercent: Int = 100,
+  zoomScale: Float = 1f,
   preloadedBitmap: Bitmap?,
   getPageBitmap: (suspend (Int) -> Bitmap?)?,
   pageIndex: Int,
@@ -1205,13 +1276,17 @@ fun PdfPageCard(
   }
   val borderWidth = if (isCurrentMatchPage) 2.5.dp else if (isMatchedPage) 1.5.dp else 1.dp
 
+  val effectiveWidthFraction = if (zoomScale < 1f) zoomScale else 1f
+  val maxBaseWidth = 680.dp
+  val effectiveMaxWidth = maxBaseWidth * effectiveWidthFraction
+
   Card(
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
     elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
     modifier = modifier
-      .widthIn(max = 680.dp)
-      .fillMaxWidth()
+      .widthIn(max = effectiveMaxWidth)
+      .fillMaxWidth(effectiveWidthFraction)
       .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
   ) {
     Box(
