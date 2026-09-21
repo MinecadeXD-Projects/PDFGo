@@ -752,16 +752,34 @@ fun ReaderScreen(
 
                   zoomAnimationJob = coroutineScope.launch {
                     val anim = Animatable(0f)
+                    var prevScale = startZoom
                     anim.animateTo(
                       targetValue = 1f,
                       animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
                     ) {
                       val p = value
-                      zoomScale = startZoom + (targetZoom - startZoom) * p
-                      panOffset = Offset(
-                        startPan.x + (targetPan.x - startPan.x) * p,
-                        startPan.y + (targetPan.y - startPan.y) * p,
-                      )
+                      val currScale = startZoom + (targetZoom - startZoom) * p
+                      val scaleRatio = if (prevScale > 0f) currScale / prevScale else 1f
+                      zoomScale = currScale
+
+                      if (currScale > 1f) {
+                        panOffset = Offset(
+                          startPan.x + (targetPan.x - startPan.x) * p,
+                          startPan.y + (targetPan.y - startPan.y) * p,
+                        )
+                      } else {
+                        panOffset = Offset.Zero
+                        val viewportHeight = size.height
+                        if (viewportHeight > 0 && kotlin.math.abs(scaleRatio - 1f) > 0.0001f) {
+                          val index = lazyListState.firstVisibleItemIndex
+                          val offset = lazyListState.firstVisibleItemScrollOffset
+                          val targetOffset = (offset * scaleRatio + (viewportHeight / 2f) * (1f - scaleRatio)).toInt()
+                          coroutineScope.launch {
+                            lazyListState.scrollToItem(index, maxOf(0, targetOffset))
+                          }
+                        }
+                      }
+                      prevScale = currScale
                     }
                     onSetZoomPercent((targetZoom * 100).toInt())
                   }
@@ -815,8 +833,21 @@ fun ReaderScreen(
                         (panOffset.y * actualZoomChange + panChange.y + centroidRelative.y * (1f - actualZoomChange)).coerceIn(-maxPanY, maxPanY)
                       } else 0f
 
+                      val oldScale = zoomScale
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
+
+                      if (newScale < 1f && oldScale < 1f && kotlin.math.abs(actualZoomChange - 1f) > 0.001f) {
+                        val viewportHeight = size.height
+                        if (viewportHeight > 0) {
+                          val index = lazyListState.firstVisibleItemIndex
+                          val offset = lazyListState.firstVisibleItemScrollOffset
+                          val targetOffset = (offset * actualZoomChange + (viewportHeight / 2f) * (1f - actualZoomChange)).toInt()
+                          coroutineScope.launch {
+                            lazyListState.scrollToItem(index, maxOf(0, targetOffset))
+                          }
+                        }
+                      }
                     }
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
@@ -861,10 +892,17 @@ fun ReaderScreen(
           modifier =
             Modifier.fillMaxSize()
               .graphicsLayer {
-                scaleX = zoomScale
-                scaleY = zoomScale
-                translationX = panOffset.x
-                translationY = panOffset.y
+                if (zoomScale > 1f) {
+                  scaleX = zoomScale
+                  scaleY = zoomScale
+                  translationX = panOffset.x
+                  translationY = panOffset.y
+                } else {
+                  scaleX = 1f
+                  scaleY = 1f
+                  translationX = 0f
+                  translationY = 0f
+                }
               }
         ) {
           if (document.totalPages > 0 && !document.useWebViewFallback) {
@@ -1268,13 +1306,17 @@ fun PdfPageCard(
   }
   val borderWidth = if (isCurrentMatchPage) 2.5.dp else if (isMatchedPage) 1.5.dp else 1.dp
 
+  val effectiveWidthFraction = if (zoomScale < 1f) zoomScale else 1f
+  val maxBaseWidth = 680.dp
+  val effectiveMaxWidth = maxBaseWidth * effectiveWidthFraction
+
   Card(
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
     elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrentMatchPage) 8.dp else 4.dp),
     modifier = modifier
-      .widthIn(max = 680.dp)
-      .fillMaxWidth()
+      .widthIn(max = effectiveMaxWidth)
+      .fillMaxWidth(effectiveWidthFraction)
       .border(borderWidth, borderColor, RoundedCornerShape(8.dp)),
   ) {
     Box(
