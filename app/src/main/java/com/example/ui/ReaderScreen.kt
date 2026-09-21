@@ -213,13 +213,15 @@ fun ReaderScreen(
     80.dp
   }
 
-  // Jump immediately to initial/saved page on document load or external page reset
-  LaunchedEffect(document.url, document.currentPage) {
-    if (document.totalPages > 0 && !lazyListState.isScrollInProgress) {
+  // Jump immediately to initial/saved page on document load
+  var initialPageLoaded by remember(document.url) { mutableStateOf(false) }
+  LaunchedEffect(document.url) {
+    if (document.totalPages > 0 && !initialPageLoaded) {
       val targetIndex = (document.currentPage - 1).coerceIn(0, document.totalPages - 1)
       if (lazyListState.firstVisibleItemIndex != targetIndex) {
         lazyListState.scrollToItem(targetIndex)
       }
+      initialPageLoaded = true
     }
   }
 
@@ -285,40 +287,57 @@ fun ReaderScreen(
       val layoutInfo = lazyListState.layoutInfo
       val visibleItems = layoutInfo.visibleItemsInfo
       if (visibleItems.isNotEmpty()) {
-        val viewportHeight = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).toFloat()
+        val viewportStart = layoutInfo.viewportStartOffset.toFloat()
+        val viewportEnd = layoutInfo.viewportEndOffset.toFloat()
+        val viewportHeight = viewportEnd - viewportStart
         val halfHeight = viewportHeight / 2f
 
-        // Mathematically calculate the visible layout boundaries under zoom and translation
-        val viewportTop = halfHeight - (halfHeight + offset.y) / scale
-        val viewportBottom = halfHeight + (halfHeight - offset.y) / scale
-
-        // Find all pages that are completely visible (fully inside the zoomed viewport)
-        val completelyVisible = visibleItems.filter { item ->
-          item.offset >= viewportTop && (item.offset + item.size) <= viewportBottom
+        // Correct visible boundaries in LazyColumn item coordinate space:
+        // When zoomed in (scale > 1f), graphicsLayer scales around center (halfHeight) with pan offset.y.
+        // When zoomed out or at 100% (scale <= 1f), graphicsLayer is 1:1, so visible boundary is the actual viewport!
+        val viewportTop = if (scale > 1f) {
+          halfHeight - (halfHeight + offset.y) / scale
+        } else {
+          viewportStart
+        }
+        val viewportBottom = if (scale > 1f) {
+          halfHeight + (halfHeight - offset.y) / scale
+        } else {
+          viewportEnd
         }
 
-        // Calculate most visible page for standard view-tracking / persistence
+        // Calculate visible pixel height for every visible item
         val mostVisible = visibleItems.maxByOrNull { item ->
-          val itemTop = item.offset
-          val itemBottom = item.offset + item.size
-          maxOf(0f, minOf(itemBottom.toFloat(), viewportBottom) - maxOf(itemTop.toFloat(), viewportTop)).toInt()
+          val itemTop = item.offset.toFloat()
+          val itemBottom = (item.offset + item.size).toFloat()
+          val visibleTop = maxOf(itemTop, viewportTop)
+          val visibleBottom = minOf(itemBottom, viewportBottom)
+          maxOf(0f, visibleBottom - visibleTop)
         }
-        val fallbackPage = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
-        val coercedFallback = fallbackPage.coerceIn(1, maxOf(1, document.totalPages))
 
-        val rangeStr = if (completelyVisible.isNotEmpty()) {
+        val primaryPage = (mostVisible?.index ?: lazyListState.firstVisibleItemIndex) + 1
+        val coercedPrimaryPage = primaryPage.coerceIn(1, maxOf(1, document.totalPages))
+
+        // Find all pages that are completely visible (strictly inside the viewport)
+        // With a 2px tolerance for subpixel anti-aliasing
+        val completelyVisible = visibleItems.filter { item ->
+          item.offset >= (viewportTop - 2f) && (item.offset + item.size) <= (viewportBottom + 2f)
+        }
+
+        // If multiple pages are completely visible, show range (e.g. "2-3")
+        // If only 1 page is completely visible, show that page (e.g. "2")
+        // If NO page is completely visible (e.g. two half-visible pages), show the page with the highest number of visible pixels!
+        val rangeStr = if (completelyVisible.size >= 2) {
           val firstPageNum = completelyVisible.first().index + 1
           val lastPageNum = completelyVisible.last().index + 1
-          if (firstPageNum == lastPageNum) {
-            "$firstPageNum"
-          } else {
-            "$firstPageNum-$lastPageNum"
-          }
+          "$firstPageNum-$lastPageNum"
+        } else if (completelyVisible.size == 1) {
+          "${completelyVisible.first().index + 1}"
         } else {
-          "$coercedFallback"
+          "$coercedPrimaryPage"
         }
 
-        Pair(coercedFallback, rangeStr)
+        Pair(coercedPrimaryPage, rangeStr)
       } else {
         val fallback = (lazyListState.firstVisibleItemIndex + 1).coerceIn(1, maxOf(1, document.totalPages))
         Pair(fallback, "$fallback")
@@ -327,7 +346,7 @@ fun ReaderScreen(
       .distinctUntilChanged()
       .collect { (page, rangeStr) ->
         visiblePageRangeStr = rangeStr
-        if (lazyListState.isScrollInProgress && page != document.currentPage) {
+        if (page != document.currentPage) {
           onSetPage(page)
         }
       }
@@ -769,13 +788,17 @@ fun ReaderScreen(
                         )
                       } else {
                         panOffset = Offset.Zero
-                        val viewportHeight = size.height
-                        if (viewportHeight > 0 && kotlin.math.abs(scaleRatio - 1f) > 0.0001f) {
-                          val index = lazyListState.firstVisibleItemIndex
-                          val offset = lazyListState.firstVisibleItemScrollOffset
-                          val targetOffset = (offset * scaleRatio + (viewportHeight / 2f) * (1f - scaleRatio)).toInt()
-                          coroutineScope.launch {
-                            lazyListState.scrollToItem(index, maxOf(0, targetOffset))
+                        if (kotlin.math.abs(scaleRatio - 1f) > 0.0001f) {
+                          val anchorY = tapOffset.y.toInt()
+                          val visibleItems = lazyListState.layoutInfo.visibleItemsInfo
+                          val anchorItem = visibleItems.firstOrNull { item ->
+                            anchorY >= item.offset && anchorY <= item.offset + item.size
+                          } ?: visibleItems.firstOrNull()
+
+                          if (anchorItem != null) {
+                            val offsetInside = (anchorY - anchorItem.offset).coerceAtLeast(0)
+                            val delta = offsetInside * (scaleRatio - 1f)
+                            lazyListState.dispatchRawDelta(delta)
                           }
                         }
                       }
@@ -837,15 +860,18 @@ fun ReaderScreen(
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
 
-                      if (newScale < 1f && oldScale < 1f && kotlin.math.abs(actualZoomChange - 1f) > 0.001f) {
-                        val viewportHeight = size.height
-                        if (viewportHeight > 0) {
-                          val index = lazyListState.firstVisibleItemIndex
-                          val offset = lazyListState.firstVisibleItemScrollOffset
-                          val targetOffset = (offset * actualZoomChange + (viewportHeight / 2f) * (1f - actualZoomChange)).toInt()
-                          coroutineScope.launch {
-                            lazyListState.scrollToItem(index, maxOf(0, targetOffset))
-                          }
+                      if (newScale <= 1f && oldScale <= 1f && kotlin.math.abs(actualZoomChange - 1f) > 0.0005f) {
+                        val anchorY = centroid.y.toInt()
+                        val visibleItems = lazyListState.layoutInfo.visibleItemsInfo
+                        val anchorItem = visibleItems.firstOrNull { item ->
+                          anchorY >= item.offset && anchorY <= item.offset + item.size
+                        } ?: visibleItems.firstOrNull()
+
+                        if (anchorItem != null) {
+                          val offsetInside = (anchorY - anchorItem.offset).coerceAtLeast(0)
+                          val zoomDelta = offsetInside * (actualZoomChange - 1f)
+                          val totalDelta = zoomDelta - panChange.y
+                          lazyListState.dispatchRawDelta(totalDelta)
                         }
                       }
                     }
