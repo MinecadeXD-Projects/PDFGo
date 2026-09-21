@@ -70,12 +70,14 @@ import com.example.ui.theme.BrandViolet
 import com.example.ui.theme.CardBorderGradient
 import com.example.ui.theme.DangerGradient
 import com.example.ui.theme.Emerald400
+import com.example.ui.theme.Emerald500
 import com.example.ui.theme.HeroBadgeGradient
 import com.example.ui.theme.HeroTextGradient
 import com.example.ui.theme.HomeDarkBaseGradient
 import com.example.ui.theme.HomeLightBaseGradient
 import com.example.ui.theme.PrimaryGradient
 import com.example.ui.theme.Rose500
+import com.example.ui.theme.Rose600
 import com.example.ui.theme.Slate950
 
 @Composable
@@ -254,16 +256,30 @@ fun HomeScreen(
       horizontalAlignment = Alignment.Start,
     ) {
       // Badge
+      val isDocumentLoaded = savedDocument != null
+      val statusBg = if (isDocumentLoaded) {
+        Brush.horizontalGradient(listOf(Emerald500.copy(alpha = 0.18f), Emerald400.copy(alpha = 0.12f)))
+      } else {
+        Brush.horizontalGradient(listOf(Rose500.copy(alpha = 0.18f), Rose600.copy(alpha = 0.12f)))
+      }
+      val statusBorder = if (isDocumentLoaded) {
+        Emerald500.copy(alpha = 0.40f)
+      } else {
+        Rose500.copy(alpha = 0.40f)
+      }
+      val statusColor = if (isDocumentLoaded) Emerald500 else Rose500
+      
       Row(
         modifier =
           Modifier.clip(RoundedCornerShape(50.dp))
-            .background(HeroBadgeGradient)
+            .background(statusBg)
             .border(
               width = 1.dp,
-              brush = Brush.horizontalGradient(listOf(BrandBlue.copy(alpha = 0.35f), BrandIndigo.copy(alpha = 0.3f))),
+              color = statusBorder,
               shape = RoundedCornerShape(50.dp),
             )
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .testTag("badge_document_status"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
@@ -271,13 +287,13 @@ fun HomeScreen(
           modifier =
             Modifier.size(6.dp)
               .clip(CircleShape)
-              .background(PrimaryGradient)
+              .background(statusColor)
         )
         Text(
           text = "One active document at a time",
           style =
             MaterialTheme.typography.labelMedium.copy(
-              color = BrandBlue,
+              color = statusColor,
               fontWeight = FontWeight.SemiBold,
               fontSize = 12.sp,
             ),

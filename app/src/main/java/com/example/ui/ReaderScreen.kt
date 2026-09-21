@@ -109,6 +109,7 @@ import com.example.model.PdfDocument
 import com.example.model.SearchState
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.BrandBlue
+import com.example.ui.theme.BrandCyan
 import com.example.ui.theme.Emerald400
 import com.example.ui.theme.PillControlGradient
 import com.example.ui.theme.PrimaryGradient
@@ -231,14 +232,14 @@ fun ReaderScreen(
 
   // Ensure zoom pill is visible on zoom/pan activity
   LaunchedEffect(zoomScale, panOffset) {
-    if (zoomScale > 1.05f) {
+    if (kotlin.math.abs(zoomScale - 1f) > 0.05f) {
       isZoomPillVisible = true
     }
   }
 
   // Auto-hide zoom pill 3s after last activity or manual toggle
   LaunchedEffect(isZoomPillVisible, zoomScale, panOffset) {
-    if (zoomScale > 1.05f && isZoomPillVisible) {
+    if (kotlin.math.abs(zoomScale - 1f) > 0.05f && isZoomPillVisible) {
       kotlinx.coroutines.delay(3000L)
       isZoomPillVisible = false
     }
@@ -689,7 +690,7 @@ fun ReaderScreen(
             .pointerInput(Unit) {
               detectTapGestures(
                 onDoubleTap = { tapOffset ->
-                  if (zoomScale > 1.05f) {
+                  if (kotlin.math.abs(zoomScale - 1f) > 0.05f) {
                     resetZoom()
                   } else {
                     zoomScale = 2.2f
@@ -706,7 +707,7 @@ fun ReaderScreen(
                 },
                 onTap = {
                   isPageCounterVisible = !isPageCounterVisible
-                  if (zoomScale > 1.05f) {
+                  if (kotlin.math.abs(zoomScale - 1f) > 0.05f) {
                     isZoomPillVisible = !isZoomPillVisible
                   }
                 }
@@ -732,13 +733,13 @@ fun ReaderScreen(
                     }
 
                     val targetScale = zoomScale * zoomChange
-                    val newScale = targetScale.coerceIn(1f, 6f)
+                    val newScale = targetScale.coerceIn(0.35f, 6.0f)
                     val actualZoomChange = if (zoomScale > 0f) newScale / zoomScale else 1f
 
-                    if (newScale <= 1.01f) {
+                    if (kotlin.math.abs(newScale - 1f) <= 0.02f) {
                       zoomScale = 1f
                       panOffset = Offset.Zero
-                    } else {
+                    } else if (newScale > 1f) {
                       val centroid = event.calculateCentroid(useCurrent = true)
                       val centroidRelative = centroid - Offset(size.width / 2f, size.height / 2f)
 
@@ -751,6 +752,10 @@ fun ReaderScreen(
 
                       zoomScale = newScale
                       panOffset = Offset(newX, newY)
+                    } else {
+                      // Zoomed out (< 1f): keep pages centered horizontally and vertically
+                      zoomScale = newScale
+                      panOffset = Offset.Zero
                     }
                     event.changes.forEach {
                       if (it.positionChanged()) it.consume()
@@ -782,9 +787,9 @@ fun ReaderScreen(
                   // Nothing is consumed, so single finger vertical scrolling on LazyColumn works seamlessly!
                 } while (event.changes.any { it.pressed })
 
-                // Re-render clear high-res bitmap only when user finishes zooming and removes fingers
+                // Re-render clear bitmap only when user finishes zooming and removes fingers
                 if (didZoom && kotlin.math.abs(zoomScale - initialZoomScale) > 0.05f) {
-                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(100, 600)
+                  val targetZoomPercent = (zoomScale * 100).toInt().coerceIn(35, 600)
                   onSetZoomPercent(targetZoomPercent)
                 }
               }
@@ -935,9 +940,9 @@ fun ReaderScreen(
         }
       }
 
-        // Floating Reset Zoom Pill at Top Right when zoomed in
+        // Floating Reset Zoom Pill at Top Right when zoomed in or out (not 100%)
         androidx.compose.animation.AnimatedVisibility(
-          visible = zoomScale > 1.05f && isZoomPillVisible,
+          visible = kotlin.math.abs(zoomScale - 1f) > 0.05f && isZoomPillVisible,
           enter = fadeIn(),
           exit = fadeOut(),
           modifier = Modifier.align(Alignment.TopEnd)
@@ -967,7 +972,7 @@ fun ReaderScreen(
                   MaterialTheme.typography.labelSmall.copy(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = Emerald400,
+                    color = if (zoomScale < 0.95f) BrandCyan else Emerald400,
                     fontSize = 11.sp,
                   ),
               )
@@ -987,10 +992,14 @@ fun ReaderScreen(
 
     // Floating Bottom Bar (Controls)
     AnimatedVisibility(
-      visible = !isFullscreen && isPageCounterVisible,
+      visible = isPageCounterVisible,
       enter = slideInVertically { it } + fadeIn(),
       exit = slideOutVertically { it } + fadeOut(),
-      modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+      modifier = Modifier
+        .align(Alignment.BottomCenter)
+        .padding(
+          bottom = if (isFullscreen) maxOf(navBarHeight + 16.dp, 24.dp) else 16.dp
+        ),
     ) {
       Surface(
         shape = RoundedCornerShape(50.dp),
